@@ -2,6 +2,8 @@ import { Suspense } from 'react';
 import { LoginScreen } from '@/features/auth/login-screen';
 
 export const metadata = { title: 'تسجيل الدخول' };
+// صفحة ديناميكية: دمج اللغة عبر next-intl يقرأ ترويسة الطلب، والتحقق يعتمد حالة الجلسة وقت التشغيل.
+export const dynamic = 'force-dynamic';
 
 export default function LoginPage({
   searchParams,

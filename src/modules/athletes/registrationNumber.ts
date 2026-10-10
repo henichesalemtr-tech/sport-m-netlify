@@ -43,7 +43,9 @@ export function generateRegistrationNumber(format: string, ctx: RegistrationCont
   }
 
   return format.replace(TOKEN_RE, (match: string, token: string, widthRaw?: string): string => {
-    switch (token) {
+    // رمز SEQ قد يحمل لاحقة العرض (SEQ:5) — نفصل الاسم عن العرض.
+    const name = token.startsWith('SEQ') ? 'SEQ' : token;
+    switch (name) {
       case 'YYYY':
         return String(ctx.year).padStart(4, '0');
       case 'YY':

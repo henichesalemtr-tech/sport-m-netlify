@@ -43,13 +43,9 @@ export function allPermissionCodes(): PermissionCode[] {
 }
 
 /**
- * المصفوفة الافتراضية (5.3). 'own' تعني ضمن نطاق بيانات المستخدم (تُطبَّق في الـ Repository).
- * هذه قيم Seed قابلة للتخصيص من Super Admin؛ ليست صلبة في منطق التفويض.
+ * المصفوفة الافتراضية (5.3) — قيم Seed قابلة للتخصيص من Super Admin؛
+ * ليست صلبة في منطق التفويض (التنفيذ الفعلي عبر الطبقة المركزية).
  */
-type Grant = 'all' | 'own' | PermissionCode[] | 'none';
-
-const V = (m: ModuleName) => perm(m, 'view');
-
 export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, PermissionCode[] | 'ALL'> = {
   SUPER_ADMIN: 'ALL',
   ADMIN: 'ALL',

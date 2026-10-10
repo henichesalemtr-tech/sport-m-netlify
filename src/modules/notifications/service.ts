@@ -9,7 +9,6 @@ import { prisma, type PrismaTransaction } from '@/shared/db/client';
 import { writeAudit } from '@/shared/audit';
 import { notFound } from '@/shared/errors';
 import { todayIn, addDays, parseDateOnly } from '@/shared/dates';
-import { appTimeZone } from '@/shared/config/settings';
 import { getSettings } from '@/modules/settings/service';
 import { getAdapter } from '@/shared/notifications/adapter';
 import { dedupeKeys } from './dedupe';
@@ -19,6 +18,12 @@ import type { AuthContext } from '@/shared/permissions/guard';
 import type { Meta } from '@/shared/api/meta';
 
 const ENTITY = 'Notification';
+
+/**
+ * أدوار تُستحقّ تنبيه قرب انتهاء الاشتراك: الاستقبال + المدير (ADMIN) + المدير العام.
+ * الإشعار موجَّه لدور واحد لكل سجل، لذا تُصدر نسخة لكل دور.
+ */
+const EXPIRING_ALERT_ROLES: readonly UserRole[] = ['RECEPTION', 'ADMIN', 'SUPER_ADMIN'];
 
 export interface EmitNotificationInput {
   type: NotificationType;
@@ -167,7 +172,11 @@ export const notificationService = {
 
   // ---------- مولّدات 7.16 (Idempotent عبر dedupeKey) ----------
 
-  /** اشتراكات تنتهي خلال N يوم (من الإعدادات subscription.expiringDays). */
+  /**
+   * اشتراكات تنتهي خلال N يوم (من الإعدادات subscription.expiringDays).
+   * يُبلَّغ عنه للموظف المستقبِل وللمدير (ADMIN و SUPER_ADMIN) — الإشعار موجَّه لدور،
+   * لذا يُصدر نسخة لكل دور بمفتاح تكرار مستقل.
+   */
   async generateSubscriptionExpiring(tx?: PrismaTransaction): Promise<number> {
     const settings = await getSettings();
     const today = parseDateOnly(todayIn(settings.timezone));
@@ -179,19 +188,21 @@ export const notificationService = {
     });
     let created = 0;
     for (const s of subs) {
-      const res = await emitNotification(
-        {
-          type: 'SUBSCRIPTION_EXPIRING',
-          roleTarget: 'RECEPTION',
-          title: 'اشتراك قارب على الانتهاء',
-          body: `اشتراك ${s.athlete.firstName} ${s.athlete.lastName} ينتهي في ${todayIn(settings.timezone, s.endDate)}`,
-          entityType: 'Subscription',
-          entityId: s.id,
-          dedupeKey: dedupeKeys.subscriptionExpiring(s.id, s.endDate, 'RECEPTION'),
-        },
-        tx,
-      );
-      if (res.created) created++;
+      for (const roleTarget of EXPIRING_ALERT_ROLES) {
+        const res = await emitNotification(
+          {
+            type: 'SUBSCRIPTION_EXPIRING',
+            roleTarget,
+            title: 'اشتراك قارب على الانتهاء',
+            body: `اشتراك ${s.athlete.firstName} ${s.athlete.lastName} ينتهي في ${todayIn(settings.timezone, s.endDate)}`,
+            entityType: 'Subscription',
+            entityId: s.id,
+            dedupeKey: dedupeKeys.subscriptionExpiring(s.id, s.endDate, roleTarget),
+          },
+          tx,
+        );
+        if (res.created) created++;
+      }
     }
     return created;
   },

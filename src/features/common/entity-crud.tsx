@@ -111,28 +111,32 @@ function buildSchema(fields: CrudField[], m: SchemaMessages) {
       shape[f.name] = z.boolean();
       continue;
     }
+    // قيود الطول تبقى على ZodString، ثم نغلّفها بـ refine حسب النوع (refine يُرجع ZodEffects).
     let s: z.ZodString = z.string();
+    if (f.required) s = s.min(1, m.required);
+    if (f.minLength) s = s.min(f.minLength, m.minLength(f.minLength));
+    if (f.maxLength) s = s.max(f.maxLength, m.maxLength(f.maxLength));
+
+    let final: z.ZodTypeAny = s;
     if (f.type === 'email') {
-      s = f.required
+      final = f.required
         ? s.refine((v) => EMAIL_RE.test(v), m.email)
         : s.refine((v) => v === '' || EMAIL_RE.test(v), m.email);
     } else if (f.type === 'number') {
-      s = f.required
+      let checked: z.ZodTypeAny = f.required
         ? s.refine((v) => INT_RE.test(v), m.number)
         : s.refine((v) => v === '' || INT_RE.test(v), m.number);
       const min = f.min;
       if (min !== undefined && min > 0) {
-        s = s.refine((v) => v === '' || Number(v) >= min, m.positive);
+        checked = checked.refine((v) => v === '' || Number(v) >= min, m.positive);
       }
+      final = checked;
     } else if (f.type === 'decimal') {
-      s = f.required
+      final = f.required
         ? s.refine((v) => DECIMAL_RE.test(v) && v.trim() !== '' && Number(v.replace(',', '.')) > 0, m.positive)
         : s.refine((v) => v === '' || DECIMAL_RE.test(v), m.number);
     }
-    if (f.required) s = s.min(1, m.required);
-    if (f.minLength) s = s.min(f.minLength, m.minLength(f.minLength));
-    if (f.maxLength) s = s.max(f.maxLength, m.maxLength(f.maxLength));
-    shape[f.name] = s;
+    shape[f.name] = final;
   }
   return z.object(shape);
 }

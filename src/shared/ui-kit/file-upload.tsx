@@ -52,6 +52,7 @@ export function FileUpload({
   const handleFiles = (files: FileList | null) => {
     if (!files || files.length === 0) return;
     const f = files[0];
+    if (!f) return;
     if (validate(f)) {
       onFileChange(null);
       return;

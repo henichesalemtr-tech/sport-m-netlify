@@ -2,7 +2,7 @@
  * التحقق الثنائي (TOTP) — تشفير/فك تشفير السر بـ AES-256-GCM (المفتاح مشتق من SESSION_SECRET)،
  * وتوليد السر/الرابط والتحقق عبر otplib. السر يُخزَّن مشفّرًا في العمود totp_secret.
  *
- * ملاحظة تحقق: لم يُشغَّل هذا الكود (بيئة بلا node)؛ الصواب من مراجعة العقود فقط.
+ * ملاحظة تحقق: منطق التشفير/التحقق مُغطّى باختبار وحدة (src/shared/auth/totp.test.ts).
  * يتطلب عمود `totp_secret` (انظر prisma/schema.prisma) ومتغير SESSION_SECRET صالح.
  */
 import crypto from 'node:crypto';
@@ -12,6 +12,8 @@ import { getEnv } from '@/shared/config/env';
 
 /** نافذة السماح (عدد الفترات ±) لاستيعاب انحراف الساعة البسيط. */
 const TOTP_WINDOW = 1;
+// otplib يقرأ النافذة من options (check لا يستقبلها كمعامل ثالث).
+authenticator.options = { ...authenticator.options, window: TOTP_WINDOW };
 
 /** مفتاح تشفير 32 بايت مشتق بشكل حتمي من SESSION_SECRET. */
 function deriveKey(): Buffer {
@@ -70,7 +72,7 @@ export function verifyTotpToken(storedEncrypted: string | null, code: string): b
   const secret = decryptTotpSecret(storedEncrypted);
   if (!secret) return false;
   try {
-    return authenticator.check(code, secret, { window: TOTP_WINDOW });
+    return authenticator.check(code, secret);
   } catch {
     return false;
   }
@@ -84,7 +86,7 @@ export function verifyTotpSecret(code: string, secret: string): boolean {
   if (!/^\d{6}$/.test(code)) return false;
   if (!/^[A-Z2-7]{16,64}$/i.test(secret)) return false;
   try {
-    return authenticator.check(code, secret, { window: TOTP_WINDOW });
+    return authenticator.check(code, secret);
   } catch {
     return false;
   }

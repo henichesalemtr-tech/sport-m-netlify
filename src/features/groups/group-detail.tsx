@@ -7,7 +7,7 @@
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Pencil, Trash2, UserPlus, UserMinus, ArrowLeftRight } from 'lucide-react';
-import { ApiClientError, apiDelete, apiGet, apiPost } from '@/shared/api/client';
+import { ApiClientError, apiDelete, apiGet } from '@/shared/api/client';
 import type { AthleteDto, GroupDto, GroupMemberDto } from '@/shared/api/types';
 import { useApi, useList, useErrorText, useMutation, makeApiMutation } from '@/shared/hooks/useApi';
 import { useSession } from '@/shared/components/session-context';

@@ -57,10 +57,10 @@ const COMMON_SETTINGS: readonly SettingDefinition[] = [
   { key: 'currency.decimals', group: 'currency', valueType: 'number', defaultValue: 2, description: 'عدد الخانات العشرية' },
   { key: 'timezone', group: 'general', valueType: 'string', defaultValue: 'Africa/Algiers', description: 'المنطقة الزمنية للمؤسسة' },
   { key: 'fiscal.startMonth', group: 'fiscal', valueType: 'number', defaultValue: 9, description: 'شهر بداية السنة المالية' },
-  { key: 'number.system', group: 'general', valueType: 'string', defaultValue: 'arab', description: 'نظام الأرقام (arab|latn)' },
+  { key: 'number.system', group: 'general', valueType: 'string', defaultValue: 'latn', description: 'نظام الأرقام (arab|latn) — الجزائر تستخدم الأرقام اللاتينية' },
   { key: 'attendance.lateMinutes', group: 'attendance', valueType: 'number', defaultValue: 10, description: 'حد التأخر بالدقائق' },
   { key: 'attendance.consecutiveAbsenceAlert', group: 'attendance', valueType: 'number', defaultValue: 3, description: 'عدد الغيابات المتتالية للتنبيه' },
-  { key: 'subscription.expiringDays', group: 'subscription', valueType: 'number', defaultValue: 7, description: 'أيام التنبيه قبل انتهاء الاشتراك' },
+  { key: 'subscription.expiringDays', group: 'subscription', valueType: 'number', defaultValue: 3, description: 'أيام التنبيه قبل انتهاء الاشتراك' },
   { key: 'payment.allowOverpay', group: 'payment', valueType: 'boolean', defaultValue: false, description: 'السماح بالدفع الزائد' },
   { key: 'receipt.template', group: 'receipt', valueType: 'string', defaultValue: 'A4', description: 'قالب الوصل (A4|80mm)' },
   { key: 'scan.dedupSeconds', group: 'scan', valueType: 'number', defaultValue: () => getEnv().SCAN_DEDUP_SECONDS, description: 'ثواني منع تكرار المسح' },
@@ -90,7 +90,7 @@ function resolveDefault(def: SettingDefinition): SettingValue {
   return typeof def.defaultValue === 'function' ? def.defaultValue() : def.defaultValue;
 }
 
-function isValueType(v: SettingValueType): v is SettingValueType {
+function isValueType(v: string): v is SettingValueType {
   return v === 'string' || v === 'number' || v === 'boolean' || v === 'json';
 }
 

@@ -34,7 +34,7 @@ export const evaluationTemplateListQuerySchema = listQuerySchema.extend({
 
 /** درجات تقييم: {criterionKey: value} — القيم تُفحص مقابل حدود القالب في الخدمة. */
 export const scoresSchema = z
-  .record(z.string(), z.number('الدرجة يجب أن تكون رقمًا'))
+  .record(z.string(), z.number({ message: 'الدرجة يجب أن تكون رقمًا' }))
   .refine((s) => Object.keys(s).length > 0, { message: 'درجة واحدة على الأقل' });
 
 export const createEvaluationSchema = z.object({

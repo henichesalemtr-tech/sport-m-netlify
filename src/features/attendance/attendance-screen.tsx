@@ -193,7 +193,7 @@ export function AttendanceScreen() {
     setSaving(true);
     setEditError(null);
     const minutesLate =
-      editStatus === 'LATE' ? Number.parseInt(editLate || '0', 10) : undefined;
+      editStatus === 'LATE' ? Number.parseInt(editLate || '0', 10) : Number.NaN;
     const body: Record<string, unknown> = {
       id: editRow.id,
       status: editStatus,

@@ -150,8 +150,8 @@ export function Chart({
   }
 
   return (
-    <div className={cn('w-full', className)}>
-      <ResponsiveContainer width="100%" height={height} role="img" aria-label={seriesLabel ?? t('textAlternative')}>
+    <div className={cn('w-full', className)} role="img" aria-label={seriesLabel ?? t('textAlternative')}>
+      <ResponsiveContainer width="100%" height={height}>
         {chart}
       </ResponsiveContainer>
       {/* Accessible text alternative */}

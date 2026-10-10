@@ -2,6 +2,7 @@
 
 import { useMemo } from 'react';
 import { useLocale } from 'next-intl';
+import { isArabic, toIntlLocale } from '@/shared/i18n/locales';
 import { useSession } from '@/shared/components/session-context';
 import {
   dateFormatter,
@@ -29,7 +30,8 @@ export function useFormatters(): Formatters {
   const { settings } = useSession();
   const locale = useLocale();
   return useMemo(() => {
-    const numLocale = locale === 'ar' && settings.numberSystem ? `${locale}-u-nu-${settings.numberSystem}` : locale;
+    const intl = toIntlLocale(locale);
+    const numLocale = isArabic(locale) && settings.numberSystem ? `${intl}-u-nu-${settings.numberSystem}` : intl;
     const currencyFmt = new Intl.NumberFormat(numLocale, {
       style: 'currency',
       currency: settings.currencyCode,
@@ -42,10 +44,10 @@ export function useFormatters(): Formatters {
         value === null || value === undefined ? '—' : currencyFmt.format(value),
       date: dateFormatter({ locale, settings }),
       dateTime: dateTimeFormatter({ locale, settings }),
-      time: timeFormatter({ locale, settings }),
+      time: timeFormatter(locale, settings),
       number: numberFormatter(locale, settings),
       percent: percentFormatter(locale),
-      locale,
+      locale: intl,
     };
   }, [locale, settings]);
 }

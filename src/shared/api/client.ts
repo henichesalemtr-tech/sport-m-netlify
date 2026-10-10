@@ -79,13 +79,22 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   // منع التكرار: مفتاح idempotency للعمليات التغييرية
   if (idempotencyKey && method !== 'GET') finalHeaders['Idempotency-Key'] = idempotencyKey;
 
-  const res = await fetch(buildUrl(path, params), {
+  const url = buildUrl(path, params);
+  const init = {
     method,
     headers: finalHeaders,
     body: body !== undefined ? JSON.stringify(body) : undefined,
     signal,
-    credentials: 'same-origin',
-  });
+    credentials: 'same-origin' as RequestCredentials,
+  };
+
+  let res = await fetch(url, init);
+  // 503 من القراءة يعني أن الطلب لم يُنفَّذ أصلًا — إعادة محاولة واحدة تعالج استيقاظ
+  // قاعدة البيانات Serverless من الخمول بلا أثر جانبي.
+  if (res.status === 503 && method === 'GET' && !signal?.aborted) {
+    await sleep(retryAfterMs(res.headers.get('retry-after')));
+    if (!signal?.aborted) res = await fetch(url, init);
+  }
 
   const isJson = res.headers.get('content-type')?.includes('application/json');
   const payload = isJson ? await res.json() : null;
@@ -99,6 +108,15 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   }
 
   return (payload ?? { data: null }) as ApiSuccess<T>;
+}
+
+function retryAfterMs(headerValue: string | null): number {
+  const seconds = Number(headerValue);
+  return Number.isFinite(seconds) && seconds > 0 ? Math.min(seconds, 5) * 1000 : 1000;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /** تنزيل ملف (تصدير/طباعة) مع احترام أخطاء API. */

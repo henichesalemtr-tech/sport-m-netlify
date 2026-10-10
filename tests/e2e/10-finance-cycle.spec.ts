@@ -26,13 +26,19 @@ test.describe('Finance cycle (API)', () => {
   test('فتح خزينة → تسجيل مصروف → تقرير → تصدير CSV', async ({ request }) => {
     await adminSession(request);
 
-    // 1) فتح رصيد الخزينة
+    // 1) فتح رصيد الخزينة — قاعدة عمل: الافتتاحي يُسجَّل مرة واحدة. على قاعدة أُفتتحت
+    //    سابقًا يُرجع 422 BUSINESS_RULE_VIOLATION؛ نقبلها مع 2xx ليبقى الاختبار قابلًا للتكرار.
     const opening = await request.post('/api/v1/cash/opening', {
       data: { amount: '500.00', txDate: today(), reason: 'افتتاح E2E' },
     });
-    expect(opening.ok()).toBeTruthy();
-    const openingBody = await opening.json();
-    expect(openingBody.data).toBeTruthy();
+    if (opening.ok()) {
+      const openingBody = await opening.json();
+      expect(openingBody.data).toBeTruthy();
+    } else {
+      const body = await opening.json().catch(() => null);
+      expect(opening.status(), JSON.stringify(body)).toBe(422);
+      expect(body?.error?.code).toBe('BUSINESS_RULE_VIOLATION');
+    }
 
     // 2) فئة مصروف جديدة
     const category = await request.post('/api/v1/expense-categories', {

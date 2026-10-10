@@ -8,6 +8,7 @@
 import { createContext, useCallback, useContext, useMemo, type ReactNode } from 'react';
 import { useLocale } from 'next-intl';
 import { formatMoney } from '@/shared/money';
+import { isArabic, toIntlLocale } from '@/shared/i18n/locales';
 import type { SessionPayload } from '@/shared/api/types';
 
 interface SessionContextValue {
@@ -63,8 +64,8 @@ export function useMoneyFormatter(): (minor: string | number | bigint) => string
       formatMoney(BigInt(minor), {
         decimals: settings.currencyDecimals,
         currency: settings.currencyCode,
-        locale,
-        numberingSystem: locale === 'ar' ? settings.numberSystem : undefined,
+        locale: toIntlLocale(locale),
+        numberingSystem: isArabic(locale) ? settings.numberSystem : undefined,
       }),
     [settings, locale],
   );

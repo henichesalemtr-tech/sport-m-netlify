@@ -5,9 +5,13 @@ import { defaultLocale, locales, type Locale } from '@/shared/i18n/request';
 /** كوكي الجلسة (انظر src/shared/auth/session.ts) — التحقق الفعلي يتم في الخادم. */
 const SESSION_COOKIE = 'sms_session';
 
-const intlMiddleware = createMiddleware(locales, {
+const intlMiddleware = createMiddleware({
+  locales,
   defaultLocale,
   localePrefix: 'as-needed',
+  // النظام عربي-جزائري: لا يُختار العرض الفرنسي/الإنجليزي من Accept-Language للمتصفح،
+  // بل تبقى العربية افتراضية وكل لغة أخرى بمسار صريح أو مبدّل اللغة.
+  localeDetection: false,
 });
 
 /** مسارات لا تتطلب جلسة (داخل أي لغة). */

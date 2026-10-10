@@ -17,36 +17,36 @@ export const subscriptionTypeKindSchema = z.enum([
  * - نوع الحصص يتطلب sessionsTotal.
  * - CUSTOM حر (أي من الحقلين اختياري).
  */
-export const createSubscriptionTypeSchema = z
-  .object({
-    name: z.string().trim().min(2, 'اسم النوع قصير جدًا').max(100, 'اسم النوع طويل جدًا'),
-    kind: subscriptionTypeKindSchema,
-    sportId: uuidSchema.nullish(),
-    /** مبلغ عشري كنص — يُحوَّل لأصغر وحدة BigInt في الخدمة (ممنوع float). */
-    defaultPrice: moneyStringSchema,
-    durationDays: z.number().int().positive().max(3650).nullish(),
-    sessionsTotal: z.number().int().positive().max(10000).nullish(),
-    allowPriceEdit: z.boolean().optional(),
-    isActive: z.boolean().optional(),
-  })
-  .superRefine((val, ctx) => {
-    if (val.kind !== 'SESSIONS' && val.kind !== 'CUSTOM' && !val.durationDays) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['durationDays'],
-        message: 'مدة الأيام مطلوبة للأنواع الزمنية',
-      });
-    }
-    if (val.kind === 'SESSIONS' && !val.sessionsTotal) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['sessionsTotal'],
-        message: 'عدد الحصص مطلوب لنوع الحصص',
-      });
-    }
-  });
+const subscriptionTypeBaseSchema = z.object({
+  name: z.string().trim().min(2, 'اسم النوع قصير جدًا').max(100, 'اسم النوع طويل جدًا'),
+  kind: subscriptionTypeKindSchema,
+  sportId: uuidSchema.nullish(),
+  /** مبلغ عشري كنص — يُحوَّل لأصغر وحدة BigInt في الخدمة (ممنوع float). */
+  defaultPrice: moneyStringSchema,
+  durationDays: z.number().int().positive().max(3650).nullish(),
+  sessionsTotal: z.number().int().positive().max(10000).nullish(),
+  allowPriceEdit: z.boolean().optional(),
+  isActive: z.boolean().optional(),
+});
 
-export const updateSubscriptionTypeSchema = createSubscriptionTypeSchema
+export const createSubscriptionTypeSchema = subscriptionTypeBaseSchema.superRefine((val, ctx) => {
+  if (val.kind !== 'SESSIONS' && val.kind !== 'CUSTOM' && !val.durationDays) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['durationDays'],
+      message: 'مدة الأيام مطلوبة للأنواع الزمنية',
+    });
+  }
+  if (val.kind === 'SESSIONS' && !val.sessionsTotal) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['sessionsTotal'],
+      message: 'عدد الحصص مطلوب لنوع الحصص',
+    });
+  }
+});
+
+export const updateSubscriptionTypeSchema = subscriptionTypeBaseSchema
   .partial()
   .extend({ version: versionSchema });
 

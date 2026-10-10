@@ -6,8 +6,9 @@
  * - exceljs يُستورد ديناميكيًا حتى لا يدخل في حزمة المتصفح.
  */
 import { sanitizeCsvCell, type CellValue, type ExportColumn } from './csv';
+import type * as ExcelJS from 'exceljs';
 
-type ExcelJsModule = typeof import('exceljs');
+type ExcelJsModule = typeof ExcelJS;
 
 async function loadExcelJs(): Promise<ExcelJsModule> {
   const mod = (await import('exceljs')) as ExcelJsModule & { default?: ExcelJsModule };

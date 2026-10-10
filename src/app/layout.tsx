@@ -28,13 +28,13 @@ export const viewport: Viewport = {
 };
 
 /**
- * التخطيط الجذري: `dir="rtl"` و `lang="ar"` افتراضيًا (اللغة الأساسية).
- * لتوجيه اللغات (fr/en) يضبط LocaleAwareAttributes في [locale]/layout.tsx
+ * التخطيط الجذري: `dir="rtl"` و `lang="ar-DZ"` افتراضيًا (اللغة الأساسية عربية جزائرية).
+ * لتوجيه اللغات (fr/en) يضبط LocaleAttributes في [locale]/layout.tsx
  * خصائص <html> حسب اللغة الحالية في العميل.
  */
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="ar" dir="rtl" className={cairo.className} suppressHydrationWarning>
+    <html lang="ar-DZ" dir="rtl" className={cairo.className} suppressHydrationWarning>
       <body className="min-h-dvh bg-background font-sans text-foreground antialiased">
         {children}
       </body>

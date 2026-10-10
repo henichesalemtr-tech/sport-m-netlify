@@ -23,7 +23,9 @@ export const roleRepository = {
     });
   },
 
-  findAllOverrides(db: Db = prisma): Promise<UserRolePermission[]> {
+  findAllOverrides(
+    db: Db = prisma,
+  ): Promise<(UserRolePermission & { permission: { code: string } })[]> {
     return db.userRolePermission.findMany({ include: { permission: { select: { code: true } } } });
   },
 

@@ -5,7 +5,7 @@
  * يُستخدم في فلاتر التقييمات/الوثائق ونوافذ الإنشاء. لا بيانات وهمية:
  * النتائج فقط من الخادم، والعرض محكوم بنطاق البيانات في الخادم.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Loader2, Search, X } from 'lucide-react';
 import type { AthleteDto } from '@/shared/api/types';
@@ -47,6 +47,7 @@ export function AthletePicker({
   const errorText = useErrorText();
   const [term, setTerm] = useState('');
   const [open, setOpen] = useState(false);
+  const listboxId = `${useId()}-list`;
   const wrapRef = useRef<HTMLDivElement>(null);
   const debounced = useDebouncedValue(term, 350);
 
@@ -105,6 +106,7 @@ export function AthletePicker({
             type="search"
             role="combobox"
             aria-expanded={open}
+            aria-controls={listboxId}
             autoComplete="off"
             disabled={disabled}
             value={term}
@@ -123,7 +125,7 @@ export function AthletePicker({
       )}
 
       {!value && open && canSearch ? (
-        <div className="max-h-64 overflow-y-auto rounded-lg border border-border bg-card shadow-md">
+        <div id={listboxId} className="max-h-64 overflow-y-auto rounded-lg border border-border bg-card shadow-md">
           {results.loading ? (
             <div className="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground">
               <Loader2 className="size-4 animate-spin" aria-hidden />

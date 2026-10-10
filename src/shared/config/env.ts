@@ -28,6 +28,15 @@ const envSchema = z.object({
   BACKUP_DIR: z.string().default('./storage/backups'),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
   APP_URL: z.string().url().default('http://localhost:3000'),
+  /**
+   * تشغيل مهام الإشعارات داخل عملية الخادم (بدون عامل منفصل).
+   * آمنة للتكرار: كل مهمة مقفلة بـ JobRun.lockKey والإشعارات Idempotent بـ dedupeKey.
+   */
+  JOBS_IN_PROCESS: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((v) => v === 'true'),
+  JOBS_INTERVAL_MINUTES: z.coerce.number().int().positive().default(15),
 });
 
 export type Env = z.infer<typeof envSchema>;

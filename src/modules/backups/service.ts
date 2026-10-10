@@ -40,7 +40,7 @@ function runCommand(command: string, args: string[]): Promise<void> {
       return;
     }
     let stderr = '';
-    child.stderr.on('data', (d: Buffer) => {
+    child.stderr?.on('data', (d: Buffer) => {
       stderr += d.toString();
     });
     child.on('error', (err: NodeJS.ErrnoException) => {

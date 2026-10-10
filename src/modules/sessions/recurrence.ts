@@ -151,7 +151,9 @@ function tzOffsetMinutes(instant: Date, timeZone: string): number {
 /** هل الخطأ انتهاك قيد EXCLUDE (Postgres 23P01) — عبر Prisma P2010 أو الخطأ الخام؟ */
 export function isExclusionViolation(e: unknown): boolean {
   if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2010') {
-    return typeof e.meta === 'string' ? e.meta.includes('23P01') : JSON.stringify(e.meta ?? '').includes('23P01');
+    const meta: unknown = e.meta;
+    const hay = typeof meta === 'string' ? meta : JSON.stringify(meta ?? '');
+    return hay.includes('23P01') || e.message.includes('23P01');
   }
   if (typeof e === 'object' && e !== null && 'code' in e) {
     return (e as { code: unknown }).code === '23P01';

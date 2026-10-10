@@ -14,57 +14,57 @@ export const timeHHmmSchema = z
   .string()
   .regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'الوقت يجب أن يكون بصيغة HH:mm');
 
-export const createGroupSchema = z
-  .object({
-    name: z.string().trim().min(2, 'اسم المجموعة قصير جدًا').max(120, 'اسم المجموعة طويل جدًا'),
-    code: z
-      .string()
-      .trim()
-      .min(2, 'رمز المجموعة قصير جدًا')
-      .max(30, 'رمز المجموعة طويل جدًا')
-      .regex(/^[A-Z0-9_-]+$/, 'رمز المجموعة أحرف لاتينية كبيرة وأرقام فقط'),
-    sportId: uuidSchema,
-    ageCategoryId: uuidSchema.nullable().optional(),
-    coachId: uuidSchema.nullable().optional(),
-    venueId: uuidSchema.nullable().optional(),
-    maxCapacity: z.number().int().min(1, 'السعة القصوى 1 على الأقل').max(10000),
-    trainingDays: z.array(trainingDaySchema).max(7).nullable().optional(),
-    startTime: timeHHmmSchema.nullable().optional(),
-    endTime: timeHHmmSchema.nullable().optional(),
-    status: groupStatusSchema.default('ACTIVE'),
-    notes: z.string().trim().max(2000).nullable().optional(),
-  })
-  .superRefine((val, ctx) => {
-    if (val.startTime && val.endTime && val.endTime <= val.startTime) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['endTime'],
-        message: 'وقت النهاية يجب أن يكون بعد وقت البداية',
-      });
-    }
-    if ((val.startTime && !val.endTime) || (!val.startTime && val.endTime)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['endTime'],
-        message: 'وقتا البداية والنهاية مطلوبان معًا',
-      });
-    }
-  });
+const groupBaseSchema = z.object({
+  name: z.string().trim().min(2, 'اسم المجموعة قصير جدًا').max(120, 'اسم المجموعة طويل جدًا'),
+  code: z
+    .string()
+    .trim()
+    .min(2, 'رمز المجموعة قصير جدًا')
+    .max(30, 'رمز المجموعة طويل جدًا')
+    .regex(/^[A-Z0-9_-]+$/, 'رمز المجموعة أحرف لاتينية كبيرة وأرقام فقط'),
+  sportId: uuidSchema,
+  ageCategoryId: uuidSchema.nullable().optional(),
+  coachId: uuidSchema.nullable().optional(),
+  venueId: uuidSchema.nullable().optional(),
+  maxCapacity: z.number().int().min(1, 'السعة القصوى 1 على الأقل').max(10000),
+  trainingDays: z.array(trainingDaySchema).max(7).nullable().optional(),
+  startTime: timeHHmmSchema.nullable().optional(),
+  endTime: timeHHmmSchema.nullable().optional(),
+  status: groupStatusSchema.default('ACTIVE'),
+  notes: z.string().trim().max(2000).nullable().optional(),
+});
+
+export const createGroupSchema = groupBaseSchema.superRefine((val, ctx) => {
+  if (val.startTime && val.endTime && val.endTime <= val.startTime) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['endTime'],
+      message: 'وقت النهاية يجب أن يكون بعد وقت البداية',
+    });
+  }
+  if ((val.startTime && !val.endTime) || (!val.startTime && val.endTime)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['endTime'],
+      message: 'وقتا البداية والنهاية مطلوبان معًا',
+    });
+  }
+});
 
 export const updateGroupSchema = z
   .object({
-    name: createGroupSchema.shape.name,
-    code: createGroupSchema.shape.code,
-    sportId: createGroupSchema.shape.sportId,
-    ageCategoryId: createGroupSchema.shape.ageCategoryId,
-    coachId: createGroupSchema.shape.coachId,
-    venueId: createGroupSchema.shape.venueId,
-    maxCapacity: createGroupSchema.shape.maxCapacity,
-    trainingDays: createGroupSchema.shape.trainingDays,
-    startTime: createGroupSchema.shape.startTime,
-    endTime: createGroupSchema.shape.endTime,
-    status: createGroupSchema.shape.status,
-    notes: createGroupSchema.shape.notes,
+    name: groupBaseSchema.shape.name,
+    code: groupBaseSchema.shape.code,
+    sportId: groupBaseSchema.shape.sportId,
+    ageCategoryId: groupBaseSchema.shape.ageCategoryId,
+    coachId: groupBaseSchema.shape.coachId,
+    venueId: groupBaseSchema.shape.venueId,
+    maxCapacity: groupBaseSchema.shape.maxCapacity,
+    trainingDays: groupBaseSchema.shape.trainingDays,
+    startTime: groupBaseSchema.shape.startTime,
+    endTime: groupBaseSchema.shape.endTime,
+    status: groupBaseSchema.shape.status,
+    notes: groupBaseSchema.shape.notes,
     version: versionSchema,
     /** خفض السعة تحت عدد الأعضاء الحاليين يتطلب صلاحية groups.override_capacity + سبب. */
     overrideReason: reasonSchema(5).optional(),
@@ -129,7 +129,7 @@ export const transferMemberSchema = z
     }
   });
 
-export type CreateGroupInput = z.infer<typeof createGroupSchema>;
+export type CreateGroupInput = z.input<typeof createGroupSchema>;
 export type UpdateGroupInput = z.infer<typeof updateGroupSchema>;
 export type GroupListQuery = z.infer<typeof groupListQuerySchema>;
 export type AddMemberInput = z.infer<typeof addMemberSchema>;

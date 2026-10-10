@@ -220,7 +220,6 @@ function CreateBackupModal({
 }) {
   const t = useTranslations('backup');
   const tc = useTranslations('common');
-  const tToast = useTranslations('ui.toast');
   const errorText = useErrorText();
   const toast = useToast();
 
@@ -313,7 +312,6 @@ function RestoreModal({
 
   const trimmedReason = reason.trim();
   const reasonOk = trimmedReason.length >= 10 && trimmedReason.length <= 500;
-  const canSubmit = confirmText === 'RESTORE' && reasonOk;
 
   const submit = async () => {
     if (!row) return;

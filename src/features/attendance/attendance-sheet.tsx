@@ -151,7 +151,7 @@ export function AttendanceSheetScreen({
 
   const groupOptions = useMemo(() => (groups.data ?? []).map((g) => ({ value: g.id, label: g.name })), [groups.data]);
 
-  const sessions = sheet.data?.sessions ?? [];
+  const sessions = useMemo(() => sheet.data?.sessions ?? [], [sheet.data]);
   const sessionOptions = useMemo(
     () =>
       sessions.map((s) => ({
@@ -185,7 +185,7 @@ export function AttendanceSheetScreen({
     setDraft(next);
   }, [sheet.data, sessionId]);
 
-  const members = sheet.data?.members ?? [];
+  const members = useMemo(() => sheet.data?.members ?? [], [sheet.data]);
 
   const setStatus = useCallback((athleteId: string, status: AttendanceStatusName | '') => {
     setDraft((prev) => {

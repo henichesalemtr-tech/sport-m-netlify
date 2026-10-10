@@ -45,7 +45,10 @@ export function RolesScreen() {
   const payload = roles.data;
   const roleList = useMemo<RoleDto[]>(() => payload?.roles ?? [], [payload]);
   const permissions = useMemo<PermissionDto[]>(() => payload?.permissions ?? [], [payload]);
-  const selectedRole = useMemo(roleList.find((r) => r.role === selected) ?? null, [roleList, selected]);
+  const selectedRole = useMemo(
+    () => roleList.find((r) => r.role === selected) ?? null,
+    [roleList, selected],
+  );
 
   // اختيار أول دور افتراضيًا بعد التحميل
   useEffect(() => {

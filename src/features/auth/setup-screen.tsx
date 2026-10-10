@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useTranslations, useLocale } from 'next-intl';
+import { useTranslations } from 'next-intl';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -32,8 +32,6 @@ export function SetupScreen() {
   const ta = useTranslations('auth');
   const tc = useTranslations('common');
   const tv = useTranslations('ui.validation');
-  const locale = useLocale();
-  const prefix = locale === 'ar' ? '' : `/${locale}`;
 
   const [checking, setChecking] = useState(true);
   const [alreadyDone, setAlreadyDone] = useState(false);

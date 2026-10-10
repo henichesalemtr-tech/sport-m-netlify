@@ -115,7 +115,7 @@ export const userRepository = {
     });
   },
 
-  create(data: Prisma.UserCreateInput, db: Db = prisma): Promise<SafeUser> {
+  create(data: Prisma.UserUncheckedCreateInput, db: Db = prisma): Promise<SafeUser> {
     return db.user.create({ data, select: USER_SAFE_SELECT });
   },
 

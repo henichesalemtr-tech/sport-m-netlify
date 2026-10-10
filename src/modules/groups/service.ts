@@ -419,8 +419,8 @@ export const groupService = {
       if (!membership) throw notFound('العضوية النشطة في المجموعة المصدر');
 
       // قفل المجموعتين بترتيب ثابت (أبجديًا) لتفادي Deadlock
-      const [firstId, secondId] = [fromGroupId, input.toGroupId].sort();
-      for (const lockId of [firstId, secondId]) {
+      const lockIds = [fromGroupId, input.toGroupId].sort();
+      for (const lockId of lockIds) {
         const locked = await groupRepository.lockGroupForUpdate(lockId, tx);
         if (!locked) throw notFound('المجموعة');
       }

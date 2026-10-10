@@ -1,6 +1,6 @@
 import type { Prisma, Sport } from '@prisma/client';
 import { prisma, type PrismaTransaction } from '@/shared/db/client';
-import { toOrderBy, pagination, type ListQuery } from '@/shared/api/query';
+import { toOrderBy, pagination } from '@/shared/api/query';
 import { normalizeArabic, escapeLike } from '@/shared/text/normalize';
 import type { SportListQuery } from './schema';
 

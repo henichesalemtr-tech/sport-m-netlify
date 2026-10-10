@@ -46,5 +46,23 @@ export async function runAllJobs(now: Date = new Date(), staleMinutes = 60): Pro
   return { recovered, results };
 }
 
+/**
+ * تشغيل مجموعة مختارة من المهام بالاسم (تُستخدم للمجدول داخل العملية).
+ * يسبقها استرداد المهام المنقطعة حتى لا تبقى أقفال معلّقة.
+ */
+export async function runJobsByName(
+  names: readonly string[],
+  now: Date = new Date(),
+  staleMinutes = 60,
+): Promise<{ recovered: number; results: Record<string, JobOutcome> }> {
+  const recovered = await recoverStaleJobs(staleMinutes);
+  const results: Record<string, JobOutcome> = {};
+  for (const name of names) {
+    const job = getJob(name);
+    if (job) results[name] = await job.run(now);
+  }
+  return { recovered, results };
+}
+
 export { runJob, recoverStaleJobs, dailyLockKey, hourlyLockKey, chunk } from './runner';
 export type { JobOutcome, JobTaskResult } from './runner';

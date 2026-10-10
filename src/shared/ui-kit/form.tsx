@@ -13,13 +13,15 @@ export interface FieldProps {
   error?: string | null;
   children: ReactNode;
   className?: string;
+  /** يملأ الحقل عرض الشبكة بالكامل (col-span كامل داخل FormGrid). */
+  full?: boolean;
 }
 
 /** غلاف حقل نموذج: تسمية + عنصر تحكم + رسالة خطأ (متوافق مع react-hook-form). */
-export function Field({ label, htmlFor, required, optional, hint, error, children, className }: FieldProps) {
+export function Field({ label, htmlFor, required, optional, hint, error, children, className, full }: FieldProps) {
   const t = useTranslations('common');
   return (
-    <div className={cn('space-y-1.5', className)}>
+    <div className={cn('space-y-1.5', full && 'sm:col-span-2', className)}>
       {label ? (
         <label htmlFor={htmlFor} className="block text-sm font-medium text-foreground">
           {label}

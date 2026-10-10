@@ -79,7 +79,7 @@ export const cashRepository = {
 
   /** قفل تسلسلي لكتّاب الدفتر (منع سباق حساب balanceAfter) — استشارة على مستوى المعاملة. */
   async lockLedger(tx: PrismaTransaction): Promise<void> {
-    await tx.$queryRaw`SELECT pg_advisory_xact_lock(7101, 0)`;
+    await tx.$queryRaw`SELECT 1 FROM pg_advisory_xact_lock(7101, 0)`;
   },
 
   /** آخر رصيد مسجل (balanceAfter لآخر قيد) — داخل معاملة (يفضَّل بعد القفل). */

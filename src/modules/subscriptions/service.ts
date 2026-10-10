@@ -463,7 +463,7 @@ export const subscriptionService = {
         : computeRenewalStart({
             previousEnd: current.endDate,
             today,
-            startFromTodayWhenExpired,
+            startFromTodayWhenExpired: startTodayWhenExpired,
           });
 
       let endDate: Date;

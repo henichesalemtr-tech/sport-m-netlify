@@ -3,6 +3,7 @@ import { NextIntlClientProvider } from 'next-intl';
 import type { ReactNode } from 'react';
 import { locales, type Locale } from '@/shared/i18n/request';
 import { LocaleAttributes } from '@/shared/components/locale-attributes';
+import { getEnv } from '@/shared/config/env';
 import { Providers } from '@/shared/components/providers';
 
 export function generateStaticParams() {
@@ -25,7 +26,11 @@ export default async function LocaleLayout({
   const messages = (await import(`@/shared/i18n/messages/${locale}.json`)).default;
 
   return (
-    <NextIntlClientProvider locale={locale} messages={messages} timeZone="UTC">
+    <NextIntlClientProvider
+      locale={locale}
+      messages={messages}
+      timeZone={getEnv().APP_TIMEZONE}
+    >
       <LocaleAttributes />
       <Providers>{children}</Providers>
     </NextIntlClientProvider>

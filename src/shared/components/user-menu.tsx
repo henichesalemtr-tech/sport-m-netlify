@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
-import { KeyRound, LogOut, ShieldCheck, UserCircle2 } from 'lucide-react';
+import { KeyRound, LogOut, ShieldCheck } from 'lucide-react';
 import { apiPost } from '@/shared/api/client';
 import { useSession } from '@/shared/components/session-context';
 import { useErrorText } from '@/shared/hooks/useApi';

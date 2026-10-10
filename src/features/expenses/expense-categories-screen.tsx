@@ -47,7 +47,6 @@ export function ExpenseCategoriesScreen() {
   const { can } = useSession();
 
   const categories = useApi<ExpenseCategoryDto[]>('/expense-categories');
-  const [q, setQ] = useState('');
   const [query, setQuery] = useState('');
 
   const [modalOpen, setModalOpen] = useState(false);
@@ -203,7 +202,7 @@ export function ExpenseCategoriesScreen() {
 
       <div className="mb-3">
         <div className="min-w-52 max-w-sm">
-          <SearchInput value={q} onSearch={setQuery} placeholder={tc('searchPlaceholder')} />
+          <SearchInput value={query} onSearch={setQuery} placeholder={tc('searchPlaceholder')} />
         </div>
       </div>
 

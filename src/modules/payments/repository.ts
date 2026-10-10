@@ -85,7 +85,7 @@ export const paymentRepository = {
 
   /** قفل تسلسلي لأرقام الحركات + عدّاد الدفعات (توليد transactionNo). */
   async lockTransactionSequence(fiscalYear: number, tx: PrismaTransaction): Promise<number> {
-    await tx.$queryRaw`SELECT pg_advisory_xact_lock(7002, ${fiscalYear})`;
+    await tx.$queryRaw`SELECT 1 FROM pg_advisory_xact_lock(7002, ${fiscalYear}::int)`;
     const rows = await tx.$queryRaw<{ n: number }[]>`
       SELECT COUNT(*)::int AS n FROM payments
     `;

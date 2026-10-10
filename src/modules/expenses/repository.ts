@@ -1,4 +1,4 @@
-import type { Expense, ExpenseCategory, Prisma } from '@prisma/client';
+import type { ExpenseCategory, Prisma } from '@prisma/client';
 import { prisma, type PrismaTransaction } from '@/shared/db/client';
 import { toOrderBy, pagination } from '@/shared/api/query';
 import { parseDateOnly } from '@/shared/dates';

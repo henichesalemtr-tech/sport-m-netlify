@@ -93,7 +93,7 @@ export function normalizeGender(raw: string): string {
 }
 
 export function validateAthleteRow(raw: Record<string, string>): RowValidation<AthleteImportRow> {
-  const candidate = {
+  const candidate: Record<string, string> = {
     ...raw,
     gender: raw.gender ? normalizeGender(raw.gender) : '',
   };

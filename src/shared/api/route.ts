@@ -1,12 +1,14 @@
-import { NextResponse } from 'next/server';
-import { ZodError, type ZodSchema } from 'zod';
+import { NextResponse, type NextRequest } from 'next/server';
+import { ZodError } from 'zod';
 import { Prisma } from '@prisma/client';
 import { AppError, ErrorCode, isAppError } from '@/shared/errors';
-import { getSession, type AuthContext } from '@/shared/auth/session';
+import { DB_UNAVAILABLE_MESSAGE, transientDbRetryAfterSeconds } from '@/shared/api/db-errors';
+import { getSession } from '@/shared/auth/session';
+import type { AuthContext } from '@/shared/permissions/guard';
 import { randomUUID } from 'node:crypto';
 
 export interface ApiContext<T = unknown> {
-  req: Request;
+  req: NextRequest;
   user: AuthContext & { sessionId: string };
   params: T;
   requestId: string;
@@ -14,11 +16,16 @@ export interface ApiContext<T = unknown> {
   userAgent?: string;
 }
 
+/** أدنى سطح بنية مطلوب من مخطط Zod — يكفي `.parse` ويحافظ على استنتاج نوع المخرجات بلا `any`. */
+interface Parseable<TOutput> {
+  parse(data: unknown): TOutput;
+}
+
 interface HandlerOptions<TParams, TBody> {
-  /** مخطط Zod للتحقق من جسم الطلب (اختياري لـ GET). */
-  body?: ZodSchema<TBody>;
+  /** مخطط Zod للتحقق من جسم الطلب (اختياري لـ GET). TBody = نوع المخرجات بعد تطبيق Defaults. */
+  body?: Parseable<TBody>;
   /** مخطط Zod لمعاملات المسار. */
-  params?: ZodSchema<TParams>;
+  params?: Parseable<TParams>;
   /** هل يتطلب مصادقة (افتراضيًا نعم). */
   auth?: boolean;
   handler: (ctx: ApiContext<TParams> & { body: TBody }) => Promise<unknown>;
@@ -32,7 +39,7 @@ interface HandlerOptions<TParams, TBody> {
 export function apiRoute<TParams = Record<string, string>, TBody = unknown>(
   opts: HandlerOptions<TParams, TBody>,
 ) {
-  return async (req: Request, { params }: { params: TParams }): Promise<NextResponse> => {
+  return async (req: NextRequest, { params }: { params: TParams }): Promise<NextResponse> => {
     const requestId = req.headers.get('x-request-id') ?? randomUUID();
     const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? undefined;
     const userAgent = req.headers.get('user-agent') ?? undefined;
@@ -90,8 +97,34 @@ export function toErrorResponse(e: unknown, requestId: string): NextResponse {
       { status: e.status, headers: { 'x-request-id': requestId } },
     );
   }
+  // تعذّر الاتصال بقاعدة البيانات (قواعد serverless المستيقظة من الخمول): عابر ولا يعني
+  // عيبًا في الطلب — 503 مع Retry-After بدل 500.
+  const retryAfter = transientDbRetryAfterSeconds(e);
+  if (retryAfter !== null) {
+    return NextResponse.json(
+      {
+        error: {
+          code: ErrorCode.SERVICE_UNAVAILABLE,
+          message: DB_UNAVAILABLE_MESSAGE,
+          requestId,
+        },
+      },
+      {
+        status: 503,
+        headers: { 'x-request-id': requestId, 'retry-after': String(retryAfter) },
+      },
+    );
+  }
   if (e instanceof Prisma.PrismaClientKnownRequestError) {
     const mapped = mapPrismaError(e);
+    if (mapped.status >= 500) {
+      console.error('[api-error]', {
+        requestId,
+        errorType: e.name,
+        prismaCode: e.code,
+        message: e.message.split('\n').filter(Boolean)[0] ?? e.message,
+      });
+    }
     return NextResponse.json(
       { error: { code: mapped.code, message: mapped.message, requestId } },
       { status: mapped.status, headers: { 'x-request-id': requestId } },

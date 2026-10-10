@@ -4,7 +4,13 @@ export default defineConfig({
   testDir: './tests/e2e',
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
+  // قاعدة بيانات مُدارة عالية الكمون (Neon) قد تُسقط اتصالها لحظيًّا؛ نسمح بإعادة محاولة
+  // واحدة محليًّا لامتصاص هذه السقطات (بقية الخطوات قابلة للتكرار بأمان).
+  retries: process.env.CI ? 2 : 1,
+  // قاعدة بيانات مُدارة عالية الكمون (Neon) — كل استعلام ~200–300ms ذهابًا وعودة،
+  // والاختبارات الدورية (مالية/صلاحيات) تسلسلية عبر نقاط API كثيرة.
+  timeout: 120_000,
+  expect: { timeout: 20_000 },
   reporter: [['html', { open: 'never' }], ['list']],
   use: {
     baseURL: process.env.APP_URL ?? 'http://localhost:3000',

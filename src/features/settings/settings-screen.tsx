@@ -23,7 +23,7 @@ import { Textarea } from '@/shared/ui-kit/textarea';
 import { Checkbox } from '@/shared/ui-kit/date-picker';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/shared/ui-kit/tabs';
 import { Card, CardContent } from '@/shared/ui-kit/card';
-import { Field, ErrorText } from '@/shared/ui-kit/form';
+import { Field } from '@/shared/ui-kit/form';
 import { Loading } from '@/shared/ui-kit/loading';
 import { ErrorState } from '@/shared/ui-kit/error-state';
 import { EmptyState } from '@/shared/ui-kit/empty-state';

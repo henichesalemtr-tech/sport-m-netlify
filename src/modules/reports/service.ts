@@ -277,7 +277,7 @@ export const reportService = {
       userId: user.userId,
       action: 'EXPORT',
       entityType: 'Report',
-      entityId: type,
+      // لا معرّف كيان UUID للتصدير (التقرير ليس سجلًا واحدًا) — النوع محفوظ في metadata.reportType.
       requestId: meta.requestId,
       ipAddress: meta.ip,
       userAgent: meta.userAgent,

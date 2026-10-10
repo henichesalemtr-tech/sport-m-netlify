@@ -32,6 +32,8 @@ const nextConfig = {
   poweredByHeader: false,
   experimental: {
     serverActions: { allowedOrigins: [] },
+    // src/instrumentation.ts: مجدول المهام داخل العملية (تنبيهات قرب انتهاء الاشتراك)
+    instrumentationHook: true,
   },
   async headers() {
     return [

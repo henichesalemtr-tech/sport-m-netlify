@@ -2,6 +2,7 @@
  * قراءة ملفات الاستيراد (xlsx/csv) — exceljs يُستورد ديناميكيًا.
  * دوال parsing نقية (بدون DB) وقابلة للاختبار.
  */
+import type * as ExcelJS from 'exceljs';
 
 export interface ParsedSheet {
   headers: string[];
@@ -82,7 +83,7 @@ export function cellToString(value: unknown): string {
   return String(value);
 }
 
-type ExcelJsModule = typeof import('exceljs');
+type ExcelJsModule = typeof ExcelJS;
 
 async function loadExcelJs(): Promise<ExcelJsModule> {
   const mod = (await import('exceljs')) as ExcelJsModule & { default?: ExcelJsModule };
@@ -93,7 +94,7 @@ async function loadExcelJs(): Promise<ExcelJsModule> {
 export async function parseXlsx(buffer: Buffer): Promise<ParsedSheet> {
   const excel = await loadExcelJs();
   const workbook = new excel.Workbook();
-  await workbook.xlsx.load(buffer);
+  await workbook.xlsx.load(buffer as unknown as Parameters<typeof workbook.xlsx.load>[0]);
   const sheet = workbook.worksheets[0];
   if (!sheet) return { headers: [], rows: [] };
 

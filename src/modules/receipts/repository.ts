@@ -28,7 +28,7 @@ export const receiptRepository = {
 
   /** قفل تسلسلي لكل سنة مالية يمنع توليد رقمين متطابقين/فجوات عند التزامن. */
   async lockFiscalYear(fiscalYear: number, tx: PrismaTransaction): Promise<void> {
-    await tx.$queryRaw`SELECT pg_advisory_xact_lock(7001, ${fiscalYear})`;
+    await tx.$queryRaw`SELECT 1 FROM pg_advisory_xact_lock(7001, ${fiscalYear}::int)`;
   },
 
   /** كل أرقام التسلسل الصادرة لسنة مالية (بترتيب تصاعدي) — داخل المعاملة بعد القفل. */

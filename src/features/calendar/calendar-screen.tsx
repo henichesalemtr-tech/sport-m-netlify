@@ -28,7 +28,6 @@ import type {
 } from '@/shared/api/types';
 import { useApi, useErrorText } from '@/shared/hooks/useApi';
 import { useSession } from '@/shared/components/session-context';
-import { useRouter } from '@/shared/i18n/navigation';
 import { useFormatters } from '@/features/common/use-formatters';
 import { todayFor } from '@/shared/lib/format';
 import { SESSION_TYPES } from '@/shared/lib/options';
@@ -37,7 +36,6 @@ import { Button } from '@/shared/ui-kit/button';
 import { Select } from '@/shared/ui-kit/select';
 import { DatePicker, TimePicker } from '@/shared/ui-kit/date-picker';
 import { Modal } from '@/shared/ui-kit/modal';
-import { ConfirmDialog } from '@/shared/ui-kit/confirm-dialog';
 import { Field, ErrorText, FormGrid } from '@/shared/ui-kit/form';
 import { Input } from '@/shared/ui-kit/input';
 import { Textarea } from '@/shared/ui-kit/textarea';
@@ -138,7 +136,6 @@ export function CalendarScreen() {
   const tErr = useTranslations('errors');
   const errorText = useErrorText();
   const toast = useToast();
-  const router = useRouter();
   const fmt = useFormatters();
   const { can, settings } = useSession();
 
@@ -1119,17 +1116,6 @@ export function CalendarScreen() {
           </Field>
         </FormGrid>
       </Modal>
-
-      {/* تأكيد الخروج بلا حفظ غير مطلوب — الإغلاق مباشر */}
-      <ConfirmDialog
-        open={false}
-        onOpenChange={() => undefined}
-        title=""
-        message=""
-        onConfirm={() => undefined}
-      />
-      <span className="hidden">{ts('SCHEDULED')}</span>
-      <button type="button" className="hidden" onClick={() => router.push('/attendance')} aria-hidden tabIndex={-1} />
     </div>
   );
 }
