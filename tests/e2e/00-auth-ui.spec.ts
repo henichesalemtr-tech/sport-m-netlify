@@ -1,0 +1,26 @@
+/**
+ * ⚠️ UNVERIFIED — لم يُشغَّل (لا متصفح/بناء في بيئة العمل). يتطلب تطبيقًا يعمل + seed.
+ * اختبار دخان للواجهة: إعادة التوجيه للّوجن + عنوان الصفحة.
+ */
+import { test, expect } from '@playwright/test';
+
+test.describe('Auth UI', () => {
+  test('زيارة مسار محمي بدون جلسة تعيد التوجيه إلى صفحة الدخول', async ({ page }) => {
+    await page.goto('/ar/athletes');
+    await expect(page).toHaveURL(/\/login/);
+  });
+
+  test('صفحة الدخول تعرض حقلي البريد وكلمة المرور', async ({ page }) => {
+    await page.goto('/ar/login');
+    await expect(page.getByLabel(/البريد|email/i)).first().toBeVisible();
+    await expect(page.getByLabel(/كلمة المرور|password/i)).first().toBeVisible();
+  });
+
+  test('محاولة دخول ببيانات خاطئة لا تنشئ جلسة', async ({ page, request }) => {
+    await page.goto('/ar/login');
+    const res = await request.post('/api/v1/auth/login', {
+      data: { email: 'nope@example.test', password: 'wrong-password-123' },
+    });
+    expect(res.status()).toBe(401);
+  });
+});

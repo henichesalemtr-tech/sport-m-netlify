@@ -1,0 +1,237 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================
+   خط Cairo المحلي — ضع ملفات woff2 في public/fonts/ (انظر src/app/fonts.ts).
+   عند غياب الملفات يتصفح المتصفح الطلب بهدوء وتتولى سلسلة التراجع العرض.
+   ============================================================ */
+@font-face {
+  font-family: 'Cairo';
+  src: url('/fonts/Cairo-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Cairo';
+  src: url('/fonts/Cairo-Medium.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Cairo';
+  src: url('/fonts/Cairo-SemiBold.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Cairo';
+  src: url('/fonts/Cairo-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ============================================================
+   رموز التصميم (Design Tokens) — تُستهلك عبر tailwind.config.ts
+   ============================================================ */
+:root {
+  /* خط: يُحقن بواسطة next/font أو @font-face أعلاه — مع تراجع آمن */
+  --font-cairo: 'Cairo', 'Segoe UI', system-ui, -apple-system, sans-serif;
+
+  --background: 150 20% 98%;
+  --foreground: 200 25% 12%;
+  --card: 0 0% 100%;
+  --card-foreground: 200 25% 12%;
+  --primary: 160 72% 28%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 160 30% 93%;
+  --secondary-foreground: 160 50% 18%;
+  --destructive: 0 72% 45%;
+  --destructive-foreground: 0 0% 100%;
+  --success: 145 63% 33%;
+  --success-foreground: 0 0% 100%;
+  --warning: 38 92% 44%;
+  --warning-foreground: 30 50% 12%;
+  --muted: 160 15% 94%;
+  --muted-foreground: 200 10% 42%;
+  --accent: 200 85% 40%;
+  --accent-foreground: 0 0% 100%;
+  --border: 200 15% 86%;
+  --input: 200 15% 82%;
+  --ring: 160 72% 28%;
+  --radius: 0.625rem;
+
+  --sidebar-width: 264px;
+  --topbar-height: 60px;
+}
+
+.dark {
+  --background: 200 25% 8%;
+  --foreground: 150 15% 93%;
+  --card: 200 22% 11%;
+  --card-foreground: 150 15% 93%;
+  --primary: 158 62% 45%;
+  --primary-foreground: 200 30% 8%;
+  --secondary: 200 18% 17%;
+  --secondary-foreground: 150 20% 88%;
+  --destructive: 0 65% 52%;
+  --destructive-foreground: 0 0% 100%;
+  --success: 145 55% 42%;
+  --success-foreground: 0 0% 100%;
+  --warning: 40 85% 55%;
+  --warning-foreground: 30 50% 10%;
+  --muted: 200 16% 15%;
+  --muted-foreground: 160 8% 65%;
+  --accent: 200 80% 55%;
+  --accent-foreground: 200 30% 8%;
+  --border: 200 15% 20%;
+  --input: 200 15% 24%;
+  --ring: 158 62% 45%;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    /* منع التمرير الأفقي على مستوى الصفحة */
+    overflow-x: hidden;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* اتجاه RTL هو الأساس — الأرقام والبريد والأكواد تبقى LTR */
+  [dir='rtl'] .ltr-field,
+  .ltr-field {
+    direction: ltr;
+    text-align: left;
+    unicode-bidi: embed;
+  }
+
+  /* حالات التركيز المرئية لكل العناصر التفاعلية (إتاحة) */
+  :focus-visible {
+    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+    border-radius: calc(var(--radius) - 4px);
+  }
+
+  /* أهداف لمس ≥ 44px */
+  button,
+  [role='button'],
+  a.btn,
+  input[type='submit'] {
+    min-height: 2.75rem;
+  }
+
+  ::selection {
+    background: hsl(var(--primary) / 0.25);
+  }
+}
+
+@layer components {
+  .card {
+    @apply rounded-lg border bg-card text-card-foreground shadow-sm;
+  }
+
+  .input-base {
+    @apply flex h-touch w-full rounded-md border border-input bg-card px-3 py-2 text-sm
+      shadow-sm transition-colors placeholder:text-muted-foreground
+      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring
+      disabled:cursor-not-allowed disabled:opacity-60;
+  }
+
+  .btn-focus-ring {
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2;
+  }
+}
+
+@layer utilities {
+  .touch-target {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
+
+/* ============================================================
+   الطباعة — هوامش @page وإخفاء هيكل التطبيق
+   ============================================================ */
+@page {
+  size: A4;
+  margin: 14mm 12mm;
+}
+
+@page receipt80 {
+  size: 80mm auto;
+  margin: 2mm;
+}
+
+.print-receipt-80 {
+  page: receipt80;
+}
+
+@media print {
+  .print-hide {
+    display: none !important;
+  }
+
+  html,
+  body {
+    background: #fff !important;
+    overflow: visible !important;
+  }
+
+  body * {
+    visibility: hidden;
+  }
+
+  .print-area,
+  .print-area * {
+    visibility: visible;
+  }
+
+  .print-area {
+    position: absolute;
+    inset-inline-start: 0;
+    inset-block-start: 0;
+    width: 100%;
+    margin: 0;
+    box-shadow: none !important;
+    border: 0 !important;
+  }
+
+  .print-break-inside-avoid {
+    break-inside: avoid;
+  }
+
+  table.print-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11pt;
+  }
+
+  table.print-table th,
+  table.print-table td {
+    border: 1px solid #444;
+    padding: 4px 8px;
+    text-align: start;
+  }
+
+  table.print-table thead {
+    display: table-header-group;
+  }
+}

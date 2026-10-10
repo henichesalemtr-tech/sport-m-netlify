@@ -1,0 +1,50 @@
+# dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# next.js
+.next/
+out/
+build/
+next-env.d.ts
+
+# production
+dist/
+
+# env & secrets
+.env
+.env.local
+.env.*.local
+*.pem
+
+# storage (ملفات المستخدمين والنسخ الاحتياطية — خارج Git)
+storage/
+!storage/.gitkeep
+
+# database
+*.db
+*.sqlite
+*.sqlite3
+
+# logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# testing
+coverage/
+playwright-report/
+test-results/
+blob-report/
+playwright/.cache/
+
+# misc
+.DS_Store
+Thumbs.db
+*.tsbuildinfo
+.vercel
+.idea/
+.vscode/

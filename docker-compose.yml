@@ -1,0 +1,92 @@
+# ============================================================
+# docker-compose — نظام إدارة رياضية
+# الخدمات: db (PostgreSQL 16) + app (Next.js) + worker (المهام المجدولة)
+#          + proxy (nginx/TLS — اختياري عبر profile: proxy)
+#
+# لم يُختبر هذا الملف في بيئة التوثيق (لا docker هنا) — NOT VERIFIED.
+#
+# التهيئة الأولى (بعد docker compose up -d db):
+#   docker compose run --rm app npx prisma migrate deploy
+#   docker compose run --rm app bash -c 'psql "$DATABASE_URL" -f prisma/raw-constraints.sql'
+#   docker compose run --rm app npm run seed
+# ملاحظة: psql يقرأ DATABASE_URL من بيئة الحاوية (env_file: .env).
+# ============================================================
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-sms_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?حدد POSTGRES_PASSWORD في .env}
+      POSTGRES_DB: ${POSTGRES_DB:-sports_management}
+      TZ: ${APP_TIMEZONE:-Africa/Algiers}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-sms_user} -d ${POSTGRES_DB:-sports_management}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    # لا تُعرَّض القاعدة للإنترنت في الإنتاج — أزلِ المنافذ واجعل الوصول عبر الشبكة الداخلية فقط
+    ports:
+      - '127.0.0.1:5432:5432'
+
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-sms_user}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-sports_management}?schema=public
+      APP_URL: ${APP_URL:-http://localhost:3000}
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - storage_private:/app/storage/private
+      - storage_backups:/app/storage/backups
+    ports:
+      - '127.0.0.1:3000:3000'
+
+  worker:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-sms_user}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-sports_management}?schema=public
+      WORKER_INTERVAL_MINUTES: ${WORKER_INTERVAL_MINUTES:-15}
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - storage_private:/app/storage/private
+      - storage_backups:/app/storage/backups
+    command: ['npx', 'tsx', 'scripts/worker.ts']
+
+  # وكيل عكسي اختياري بـ HTTPS — فعّله بـ:
+  #   docker compose --profile proxy up -d
+  # ضع شهاداتك في docker/certs/{fullchain.pem,privkey.pem}
+  proxy:
+    image: nginx:1.27-alpine
+    profiles: ['proxy']
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./docker/certs:/etc/nginx/certs:ro
+
+volumes:
+  pgdata:
+  storage_private:
+  storage_backups:

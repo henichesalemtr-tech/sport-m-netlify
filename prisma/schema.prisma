@@ -1,0 +1,1059 @@
+// ============================================================
+// مخطط قاعدة البيانات — نظام إدارة رياضية
+// PostgreSQL مطلوب للإنتاج (قيود EXCLUDE، فهارس جزئية، BIGINT).
+// انظر docs/DATABASE_SCHEMA.md و docs/ASSUMPTIONS.md
+//
+// ملاحظة: Prisma لا يدعم أصليًا:
+//   - EXCLUDE USING gist (كشف تعارض الحصص)  → يُطبَّق بهجرة SQL خام (migration.sql)
+//   - الفهارس الجزئية WHERE deleted_at IS NULL → تُطبَّق بهجرة SQL خام
+//   - منع UPDATE/DELETE على audit_logs       → يُطبَّق بـ REVOKE في SQL خام
+// هذه القيود موثّقة ومرفقة في prisma/migrations.
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- Enums ----------
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  RECEPTION
+  COACH
+  ACCOUNTANT
+  VIEWER
+}
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum AthleteStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  WITHDRAWN
+  BLOCKED
+}
+
+enum Gender {
+  MALE
+  FEMALE
+}
+
+enum GroupStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum VenueType {
+  HALL
+  FIELD
+  COURT
+  POOL
+  GYM
+  OTHER
+}
+
+enum VenueStatus {
+  AVAILABLE
+  MAINTENANCE
+  CLOSED
+}
+
+enum SessionType {
+  TRAINING
+  MATCH
+  TOURNAMENT
+  EXAM
+  ACTIVITY
+  MEETING
+}
+
+enum SessionStatus {
+  SCHEDULED
+  CANCELLED
+  COMPLETED
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+  EXCUSED
+}
+
+enum AttendanceMethod {
+  MANUAL
+  BULK
+  QR
+  BARCODE
+  EXTERNAL
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  EXPIRED
+  SUSPENDED
+  RENEWING
+  CANCELLED
+}
+
+enum SubscriptionTypeKind {
+  MONTHLY
+  QUARTERLY
+  SEMI_ANNUAL
+  ANNUAL
+  SESSIONS
+  CUSTOM
+}
+
+enum DiscountKind {
+  FIXED
+  PERCENT
+}
+
+enum PaymentStatus {
+  COMPLETED
+  VOIDED
+}
+
+enum ExpenseStatus {
+  ACTIVE
+  VOIDED
+}
+
+enum CashTransactionType {
+  OPENING_BALANCE
+  INCOME
+  EXPENSE
+  ADJUSTMENT
+  REVERSAL
+}
+
+enum DocumentStatus {
+  ACTIVE
+  EXPIRED
+  DELETED
+}
+
+enum NotificationType {
+  SUBSCRIPTION_EXPIRING
+  SUBSCRIPTION_EXPIRED
+  ABSENCE
+  CONSECUTIVE_ABSENCE
+  REPEATED_LATE
+  NEW_PAYMENT
+  OVERDUE_DEBT
+  UPCOMING_SESSION
+  SESSION_RESCHEDULED
+  SESSION_CANCELLED
+  DOCUMENT_EXPIRING
+}
+
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+  SMS
+  WHATSAPP
+}
+
+enum DeliveryStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+enum AuditAction {
+  LOGIN
+  LOGOUT
+  LOGIN_FAILED
+  CREATE
+  UPDATE
+  DELETE
+  RESTORE
+  VOID
+  REFUND
+  VIEW_SENSITIVE
+  EXPORT
+  IMPORT
+  BACKUP
+  RESTORE_BACKUP
+  ROLE_CHANGE
+  PERMISSION_CHANGE
+  SETTINGS_CHANGE
+  PASSWORD_CHANGE
+}
+
+enum ImportStatus {
+  UPLOADED
+  MAPPED
+  PREVIEWED
+  VALIDATING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum JobStatus {
+  PENDING
+  RUNNING
+  SUCCESS
+  FAILED
+}
+
+enum AgeCategoryKind {
+  NORMAL
+  SENIOR
+}
+
+// ---------- الهوية والصلاحيات ----------
+
+model User {
+  id                 String      @id @default(uuid()) @db.Uuid
+  email              String      @unique
+  username           String?     @unique
+  fullName           String      @map("full_name")
+  passwordHash       String      @map("password_hash")
+  role               UserRole    @default(VIEWER)
+  status             UserStatus  @default(ACTIVE)
+  mustChangePassword Boolean     @default(false) @map("must_change_password")
+  totpEnabled        Boolean     @default(false) @map("totp_enabled")
+  totpSecret         String?     @map("totp_secret")
+  lastLoginAt        DateTime?   @map("last_login_at") @db.Timestamptz(6)
+  failedLoginCount   Int         @default(0) @map("failed_login_count")
+  lockedUntil        DateTime?   @map("locked_until") @db.Timestamptz(6)
+  linkedCoachId      String?     @unique @map("linked_coach_id") @db.Uuid
+  linkedCoach        Coach?      @relation(fields: [linkedCoachId], references: [id])
+  createdAt          DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdBy          String?     @map("created_by") @db.Uuid
+  updatedBy          String?     @map("updated_by") @db.Uuid
+  deletedAt          DateTime?   @map("deleted_at") @db.Timestamptz(6)
+  version            Int         @default(0)
+
+  sessions           Session[]
+  rolePermissions    UserRolePermission[]
+  auditLogs          AuditLog[]
+
+  @@index([email])
+  @@index([role])
+  @@map("users")
+}
+
+model Permission {
+  id          String               @id @default(uuid()) @db.Uuid
+  code        String               @unique // مثل athletes.view
+  module      String // مثل athletes
+  description String?
+  isSystem    Boolean              @default(true) @map("is_system")
+  createdAt   DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  rolePerms   UserRolePermission[]
+
+  @@index([module])
+  @@map("permissions")
+}
+
+// ربط الأدوار (النظامية) بالصلاحيات — قابل للتخصيص من Super Admin
+model UserRolePermission {
+  id           String     @id @default(uuid()) @db.Uuid
+  role         UserRole
+  permissionId String     @map("permission_id") @db.Uuid
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  granted      Boolean    @default(true)
+  createdBy    String?    @map("created_by") @db.Uuid
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([role, permissionId])
+  @@index([role])
+  @@map("user_role_permissions")
+}
+
+model Session {
+  id            String    @id @default(uuid()) @db.Uuid
+  userId        String    @map("user_id") @db.Uuid
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash     String    @unique @map("token_hash")
+  ipAddress     String?   @map("ip_address")
+  userAgent     String?   @map("user_agent")
+  expiresAt     DateTime  @map("expires_at") @db.Timestamptz(6)
+  absoluteExp   DateTime  @map("absolute_exp") @db.Timestamptz(6)
+  revokedAt     DateTime? @map("revoked_at") @db.Timestamptz(6)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+model PasswordResetToken {
+  id          String    @id @default(uuid()) @db.Uuid
+  userId      String    @map("user_id") @db.Uuid
+  tokenHash   String    @map("token_hash")
+  expiresAt   DateTime  @map("expires_at") @db.Timestamptz(6)
+  usedAt      DateTime? @map("used_at") @db.Timestamptz(6)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
+
+// ---------- الإعدادات ----------
+
+// إعدادات键/قيمة قابلة للتعديل من الواجهة (لا قيم صلبة في الكود)
+model Setting {
+  id          String   @id @default(uuid()) @db.Uuid
+  key         String   @unique
+  value       String   @db.Text
+  valueType   String   @default("string") @map("value_type") // string|number|boolean|json
+  group       String   @default("general")
+  description String?
+  updatedBy   String?  @map("updated_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([group])
+  @@map("settings")
+}
+
+// ---------- الأنشطة والفئات والقاعات ----------
+
+model Sport {
+  id          String    @id @default(uuid()) @db.Uuid
+  name        String
+  nameEn      String?   @map("name_en")
+  color       String?   @default("#2563eb")
+  isActive    Boolean   @default(true) @map("is_active")
+  sortOrder   Int       @default(0) @map("sort_order")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdBy   String?   @map("created_by") @db.Uuid
+  updatedBy   String?   @map("updated_by") @db.Uuid
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz(6)
+  version     Int       @default(0)
+
+  groups          Group[]
+  athletes        Athlete[]
+  sessions        TrainingSession[]
+  subscriptionTypes SubscriptionType[]
+  evaluations     EvaluationTemplate[]
+
+  @@index([name])
+  @@map("sports")
+}
+
+model AgeCategory {
+  id          String    @id @default(uuid()) @db.Uuid
+  name        String
+  kind        AgeCategoryKind @default(NORMAL)
+  minAge      Int?      @map("min_age")
+  maxAge      Int?      @map("max_age") // null = أكابر
+  seasonStartMonth Int  @default(9) @map("season_start_month")
+  sortOrder   Int       @default(0) @map("sort_order")
+  isActive    Boolean   @default(true) @map("is_active")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdBy   String?   @map("created_by") @db.Uuid
+  updatedBy   String?   @map("updated_by") @db.Uuid
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz(6)
+  version     Int       @default(0)
+
+  groups   Group[]
+  athletes Athlete[]
+
+  @@index([name])
+  @@map("age_categories")
+}
+
+model Venue {
+  id          String      @id @default(uuid()) @db.Uuid
+  name        String
+  type        VenueType   @default(HALL)
+  capacity    Int?
+  status      VenueStatus @default(AVAILABLE)
+  location    String?
+  notes       String?     @db.Text
+  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdBy   String?     @map("created_by") @db.Uuid
+  updatedBy   String?     @map("updated_by") @db.Uuid
+  deletedAt   DateTime?   @map("deleted_at") @db.Timestamptz(6)
+  version     Int         @default(0)
+
+  groups   Group[]
+  sessions TrainingSession[]
+
+  @@index([name])
+  @@map("venues")
+}
+
+// ---------- المدربون ----------
+
+model Coach {
+  id            String    @id @default(uuid()) @db.Uuid
+  firstName     String    @map("first_name")
+  lastName      String    @map("last_name")
+  photoUrl      String?   @map("photo_url")
+  phone         String?
+  email         String?
+  specialization String?
+  certificate   String?
+  joinedAt      DateTime? @map("joined_at") @db.Date
+  isActive      Boolean   @default(true) @map("is_active")
+  notes         String?   @db.Text
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdBy     String?   @map("created_by") @db.Uuid
+  updatedBy     String?   @map("updated_by") @db.Uuid
+  deletedAt     DateTime? @map("deleted_at") @db.Timestamptz(6)
+  version       Int       @default(0)
+
+  linkedUser    User?
+  groups        Group[]
+  sessions      TrainingSession[]
+  coachSports   CoachSport[]
+  evaluations   Evaluation[]
+
+  @@index([firstName, lastName])
+  @@map("coaches")
+}
+
+model CoachSport {
+  id       String @id @default(uuid()) @db.Uuid
+  coachId  String @map("coach_id") @db.Uuid
+  coach    Coach  @relation(fields: [coachId], references: [id], onDelete: Cascade)
+  sportId  String @map("sport_id") @db.Uuid
+  sport    Sport  @relation(fields: [sportId], references: [id], onDelete: Cascade)
+
+  @@unique([coachId, sportId])
+  @@map("coach_sports")
+}
+
+// ---------- الأولياء ----------
+
+model Parent {
+  id            String    @id @default(uuid()) @db.Uuid
+  firstName     String    @map("first_name")
+  lastName      String    @map("last_name")
+  phone         String
+  phone2        String?
+  email         String?
+  address       String?   @db.Text
+  relationship  String? // صلة القرابة الافتراضية
+  notes         String?   @db.Text
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdBy     String?   @map("created_by") @db.Uuid
+  updatedBy     String?   @map("updated_by") @db.Uuid
+  deletedAt     DateTime? @map("deleted_at") @db.Timestamptz(6)
+  version       Int       @default(0)
+
+  athleteParents AthleteParent[]
+
+  @@index([phone])
+  @@index([firstName, lastName])
+  @@map("parents")
+}
+
+// ---------- الرياضيون ----------
+
+model Athlete {
+  id              String        @id @default(uuid()) @db.Uuid
+  registrationNo  String        @unique @map("registration_no")
+  firstName       String        @map("first_name")
+  lastName        String        @map("last_name")
+  photoUrl        String?       @map("photo_url")
+  gender          Gender        @default(MALE)
+  birthDate       DateTime      @map("birth_date") @db.Date
+  phone           String?
+  email           String?
+  address         String?       @db.Text
+  sportId         String?       @map("sport_id") @db.Uuid
+  sport           Sport?        @relation(fields: [sportId], references: [id])
+  ageCategoryId   String?       @map("age_category_id") @db.Uuid
+  ageCategory     AgeCategory?  @relation(fields: [ageCategoryId], references: [id])
+  registrationDate DateTime     @default(now()) @map("registration_date") @db.Date
+  status          AthleteStatus @default(ACTIVE)
+  notes           String?       @db.Text
+  additionalInfo  String?       @map("additional_info") @db.Text
+  // جهة اتصال الطوارئ
+  emergencyName   String?       @map("emergency_name")
+  emergencyPhone  String?       @map("emergency_phone")
+  // حقول حساسة (لا يراها إلا من يملك athletes.view_sensitive) — 6.6
+  medicalNotes    String?       @map("medical_notes") @db.Text
+  bloodType       String?       @map("blood_type")
+  allergies       String?       @db.Text
+  imageConsent    Boolean       @default(false) @map("image_consent")
+  // رمز المسح — عشوائي ≥128بت، قابل للإبطال وإعادة الإنشاء
+  scanCodeHash    String?       @unique @map("scan_code_hash")
+  scanCodeVersion Int           @default(0) @map("scan_code_version")
+  createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdBy       String?       @map("created_by") @db.Uuid
+  updatedBy       String?       @map("updated_by") @db.Uuid
+  deletedAt       DateTime?     @map("deleted_at") @db.Timestamptz(6)
+  version         Int           @default(0)
+
+  parents         AthleteParent[]
+  groupMembers    GroupMember[]
+  subscriptions   Subscription[]
+  payments        Payment[]
+  attendance      AttendanceRecord[]
+  documents       AthleteDocument[]
+  evaluations     Evaluation[]
+
+  @@index([firstName, lastName])
+  @@index([status])
+  @@index([sportId])
+  @@index([ageCategoryId])
+  @@index([birthDate])
+  @@map("athletes")
+}
+
+// علاقة عدة-إلى-عدة بين الرياضي والولي
+model AthleteParent {
+  id           String  @id @default(uuid()) @db.Uuid
+  athleteId    String  @map("athlete_id") @db.Uuid
+  athlete      Athlete @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  parentId     String  @map("parent_id") @db.Uuid
+  parent       Parent  @relation(fields: [parentId], references: [id], onDelete: Cascade)
+  relationship String? // صلة القرابة لهذه العلاقة
+  isPrimary    Boolean @default(false) @map("is_primary")
+  isPayer      Boolean @default(false) @map("is_payer")
+  isEmergency  Boolean @default(false) @map("is_emergency")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([athleteId, parentId])
+  @@index([parentId])
+  @@map("athlete_parents")
+}
+
+// ---------- المجموعات ----------
+
+model Group {
+  id             String      @id @default(uuid()) @db.Uuid
+  name           String
+  code           String      @unique
+  sportId        String      @map("sport_id") @db.Uuid
+  sport          Sport       @relation(fields: [sportId], references: [id])
+  ageCategoryId  String?     @map("age_category_id") @db.Uuid
+  ageCategory    AgeCategory? @relation(fields: [ageCategoryId], references: [id])
+  coachId        String?     @map("coach_id") @db.Uuid
+  coach          Coach?      @relation(fields: [coachId], references: [id])
+  venueId        String?     @map("venue_id") @db.Uuid
+  venue          Venue?      @relation(fields: [venueId], references: [id])
+  maxCapacity    Int         @map("max_capacity")
+  trainingDays   String?     @map("training_days") // JSON: ["SAT","MON"]
+  startTime      String?     @map("start_time") // "17:00"
+  endTime        String?     @map("end_time")
+  status         GroupStatus @default(ACTIVE)
+  notes          String?     @db.Text
+  createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdBy      String?     @map("created_by") @db.Uuid
+  updatedBy      String?     @map("updated_by") @db.Uuid
+  deletedAt      DateTime?   @map("deleted_at") @db.Timestamptz(6)
+  version        Int         @default(0)
+
+  members        GroupMember[]
+  sessions       TrainingSession[]
+  subscriptions  Subscription[]
+
+  @@index([sportId])
+  @@index([coachId])
+  @@map("groups")
+}
+
+model GroupMember {
+  id         String    @id @default(uuid()) @db.Uuid
+  groupId    String    @map("group_id") @db.Uuid
+  group      Group     @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  athleteId  String    @map("athlete_id") @db.Uuid
+  athlete    Athlete   @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  joinedAt   DateTime  @default(now()) @map("joined_at") @db.Date
+  leftAt     DateTime? @map("left_at") @db.Date
+  leaveReason String?  @map("leave_reason")
+  // السعة تُفرض داخل Transaction بقفل صف المجموعة (SELECT ... FOR UPDATE) — 7.6
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdBy  String?   @map("created_by") @db.Uuid
+
+  @@unique([groupId, athleteId, leftAt]) // عضوية نشطة واحدة (leftAt null)
+  @@index([athleteId])
+  @@index([groupId, leftAt])
+  @@map("group_members")
+}
+
+// ---------- الجدول والحصص ----------
+
+model TrainingSession {
+  id           String        @id @default(uuid()) @db.Uuid
+  type         SessionType   @default(TRAINING)
+  title        String
+  sportId      String?       @map("sport_id") @db.Uuid
+  sport        Sport?        @relation(fields: [sportId], references: [id])
+  groupId      String?       @map("group_id") @db.Uuid
+  group        Group?        @relation(fields: [groupId], references: [id])
+  coachId      String?       @map("coach_id") @db.Uuid
+  coach        Coach?        @relation(fields: [coachId], references: [id])
+  venueId      String?       @map("venue_id") @db.Uuid
+  venue        Venue?        @relation(fields: [venueId], references: [id])
+  sessionDate  DateTime      @map("session_date") @db.Date
+  startTime    DateTime      @map("start_time") @db.Timestamptz(6)
+  endTime      DateTime      @map("end_time") @db.Timestamptz(6)
+  description  String?       @db.Text
+  status       SessionStatus @default(SCHEDULED)
+  // سلسلة التكرار (للحصص المولّدة)
+  seriesId     String?       @map("series_id") @db.Uuid
+  isException  Boolean       @default(false) @map("is_exception")
+  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdBy    String?       @map("created_by") @db.Uuid
+  updatedBy    String?       @map("updated_by") @db.Uuid
+  deletedAt    DateTime?     @map("deleted_at") @db.Timestamptz(6)
+  version      Int           @default(0)
+
+  attendance   AttendanceRecord[]
+
+  @@index([sessionDate])
+  @@index([groupId, sessionDate])
+  @@index([coachId, startTime, endTime])
+  @@index([venueId, startTime, endTime])
+  @@index([seriesId])
+  @@map("training_sessions")
+}
+
+// ---------- الحضور ----------
+
+model AttendanceRecord {
+  id           String           @id @default(uuid()) @db.Uuid
+  athleteId    String           @map("athlete_id") @db.Uuid
+  athlete      Athlete          @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  sessionId    String           @map("session_id") @db.Uuid
+  session      TrainingSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  groupId      String           @map("group_id") @db.Uuid
+  status       AttendanceStatus @default(PRESENT)
+  method       AttendanceMethod @default(MANUAL)
+  recordDate   DateTime         @map("record_date") @db.Date
+  recordedAt   DateTime         @default(now()) @map("recorded_at") @db.Timestamptz(6)
+  recordedBy   String?          @map("recorded_by") @db.Uuid
+  minutesLate  Int              @default(0) @map("minutes_late")
+  consumedSession Boolean       @default(false) @map("consumed_session") // للاشتراك حسب الحصص
+  idempotencyKey String?        @unique @map("idempotency_key")
+  notes        String?          @db.Text
+  createdAt    DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([athleteId, sessionId]) // منع تكرار الحضور — 7.8
+  @@index([sessionId])
+  @@index([groupId, recordDate])
+  @@index([athleteId, recordDate])
+  @@map("attendance_records")
+}
+
+// ---------- الاشتراكات ----------
+
+model SubscriptionType {
+  id             String               @id @default(uuid()) @db.Uuid
+  name           String
+  kind           SubscriptionTypeKind @default(MONTHLY)
+  sportId        String?              @map("sport_id") @db.Uuid
+  sport          Sport?               @relation(fields: [sportId], references: [id])
+  // المبلغ بأصغر وحدة (BIGINT minor units) — ممنوع Float
+  defaultPrice   BigInt               @map("default_price")
+  durationDays   Int?                 @map("duration_days") // null لأنواع الحصص
+  sessionsTotal  Int?                 @map("sessions_total")
+  allowPriceEdit Boolean              @default(true) @map("allow_price_edit")
+  isActive       Boolean              @default(true) @map("is_active")
+  createdAt      DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdBy      String?              @map("created_by") @db.Uuid
+  updatedBy      String?              @map("updated_by") @db.Uuid
+  deletedAt      DateTime?            @map("deleted_at") @db.Timestamptz(6)
+  version        Int                  @default(0)
+
+  subscriptions  Subscription[]
+
+  @@index([kind])
+  @@map("subscription_types")
+}
+
+model Subscription {
+  id             String             @id @default(uuid()) @db.Uuid
+  athleteId      String             @map("athlete_id") @db.Uuid
+  athlete        Athlete            @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  sportId        String?            @map("sport_id") @db.Uuid
+  groupId        String?            @map("group_id") @db.Uuid
+  group          Group?             @relation(fields: [groupId], references: [id])
+  subscriptionTypeId String         @map("subscription_type_id") @db.Uuid
+  subscriptionType   SubscriptionType @relation(fields: [subscriptionTypeId], references: [id])
+  startDate      DateTime           @map("start_date") @db.Date
+  endDate        DateTime           @map("end_date") @db.Date
+  price          BigInt // minor units
+  discountKind   DiscountKind?      @map("discount_kind")
+  discountValue  BigInt?            @map("discount_value") @default(0) // مبلغ ثابت (minor) أو نسبة×100
+  discountReason String?            @map("discount_reason") // إلزامي عند وجود خصم
+  netAmount      BigInt             @map("net_amount") // الصافي = price - discount
+  paidAmount     BigInt             @default(0) @map("paid_amount") // مشتق من الدفعات (يُحدَّث في Transaction)
+  dueDate        DateTime           @map("due_date") @db.Date
+  status         SubscriptionStatus @default(ACTIVE)
+  sessionsTotal  Int?               @map("sessions_total")
+  sessionsUsed   Int                @default(0) @map("sessions_used")
+  suspendStart   DateTime?          @map("suspend_start") @db.Date
+  suspendEnd     DateTime?          @map("suspend_end") @db.Date
+  suspendReason  String?            @map("suspend_reason")
+  cancelReason   String?            @map("cancel_reason")
+  renewedFromId  String?            @map("renewed_from_id") @db.Uuid
+  createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdBy      String?            @map("created_by") @db.Uuid
+  updatedBy      String?            @map("updated_by") @db.Uuid
+  deletedAt      DateTime?          @map("deleted_at") @db.Timestamptz(6)
+  version        Int                @default(0)
+
+  payments       Payment[]
+
+  @@index([athleteId, status])
+  @@index([sportId, status])
+  @@index([dueDate])
+  @@index([endDate])
+  @@map("subscriptions")
+}
+
+// ---------- المدفوعات والوصولات ----------
+
+model PaymentMethod {
+  id        String    @id @default(uuid()) @db.Uuid
+  name      String    @unique // نقدًا / تحويل / بطاقة / أخرى — ديناميكية
+  isActive  Boolean   @default(true) @map("is_active")
+  sortOrder Int       @default(0) @map("sort_order")
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  payments  Payment[]
+
+  @@map("payment_methods")
+}
+
+model Payment {
+  id             String        @id @default(uuid()) @db.Uuid
+  transactionNo  String        @unique @map("transaction_no")
+  athleteId      String        @map("athlete_id") @db.Uuid
+  athlete        Athlete       @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  subscriptionId String        @map("subscription_id") @db.Uuid
+  subscription   Subscription  @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  amount         BigInt // minor units — غير قابل للتعديل
+  discount       BigInt        @default(0)
+  netAmount      BigInt        @map("net_amount")
+  paymentMethodId String       @map("payment_method_id") @db.Uuid
+  paymentMethod  PaymentMethod @relation(fields: [paymentMethodId], references: [id])
+  paymentDate    DateTime      @map("payment_date") @db.Date
+  status         PaymentStatus @default(COMPLETED)
+  voidReason     String?       @map("void_reason")
+  voidedAt       DateTime?     @map("voided_at") @db.Timestamptz(6)
+  voidedBy       String?       @map("voided_by") @db.Uuid
+  refundedAmount BigInt        @default(0) @map("refunded_amount")
+  employeeId     String?       @map("employee_id") @db.Uuid
+  notes          String?       @db.Text
+  idempotencyKey String?       @unique @map("idempotency_key")
+  receiptId      String?       @unique @map("receipt_id") @db.Uuid
+  receipt        Receipt?      @relation(fields: [receiptId], references: [id])
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdBy      String?       @map("created_by") @db.Uuid
+
+  @@index([athleteId])
+  @@index([subscriptionId, status])
+  @@index([paymentDate])
+  @@map("payments")
+}
+
+model Receipt {
+  id            String    @id @default(uuid()) @db.Uuid
+  receiptNo     String    @unique @map("receipt_no") // تسلسلي بلا فجوات لكل سنة مالية
+  fiscalYear    Int       @map("fiscal_year")
+  sequence      Int // عدّاد داخل السنة — يُحدَّث بقفل الصف
+  paymentId     String?   @map("payment_id") @db.Uuid
+  status        PaymentStatus @default(COMPLETED)
+  reprintCount  Int       @default(0) @map("reprint_count")
+  lastReprintAt DateTime? @map("last_reprint_at") @db.Timestamptz(6)
+  template      String    @default("A4") // A4 | 80mm
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  payment       Payment?
+
+  @@unique([fiscalYear, sequence])
+  @@map("receipts")
+}
+
+// ---------- المصاريف والخزينة ----------
+
+model ExpenseCategory {
+  id        String    @id @default(uuid()) @db.Uuid
+  name      String    @unique
+  isActive  Boolean   @default(true) @map("is_active")
+  sortOrder Int       @default(0) @map("sort_order")
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  expenses  Expense[]
+
+  @@map("expense_categories")
+}
+
+model Expense {
+  id            String          @id @default(uuid()) @db.Uuid
+  amount        BigInt
+  categoryId    String          @map("category_id") @db.Uuid
+  category      ExpenseCategory @relation(fields: [categoryId], references: [id])
+  expenseDate   DateTime        @map("expense_date") @db.Date
+  description   String?         @db.Text
+  beneficiary   String?
+  employeeId    String?         @map("employee_id") @db.Uuid
+  status        ExpenseStatus   @default(ACTIVE)
+  voidReason    String?         @map("void_reason")
+  attachments   String?         @db.Text // JSON list of storage keys
+  createdAt     DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdBy     String?         @map("created_by") @db.Uuid
+  updatedBy     String?         @map("updated_by") @db.Uuid
+  deletedAt     DateTime?       @map("deleted_at") @db.Timestamptz(6)
+  version       Int             @default(0)
+
+  @@index([expenseDate])
+  @@index([categoryId])
+  @@map("expenses")
+}
+
+// دفتر حركات الخزينة — Append-Only
+model CashTransaction {
+  id          String              @id @default(uuid()) @db.Uuid
+  type        CashTransactionType
+  amount      BigInt // minor units (موجب/سالب حسب النوع)
+  balanceAfter BigInt             @map("balance_after")
+  referenceType String?           @map("reference_type") // payment|expense|adjustment
+  referenceId String?             @map("reference_id") @db.Uuid
+  reason      String?             @db.Text
+  txDate      DateTime            @map("tx_date") @db.Date
+  createdBy   String?             @map("created_by") @db.Uuid
+  createdAt   DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([txDate])
+  @@index([type])
+  @@index([referenceType, referenceId])
+  @@map("cash_transactions")
+}
+
+model CashClosing {
+  id             String   @id @default(uuid()) @db.Uuid
+  closingDate    DateTime @unique @map("closing_date") @db.Date
+  expectedAmount BigInt   @map("expected_amount")
+  countedAmount  BigInt   @map("counted_amount")
+  difference     BigInt
+  reason         String?  @db.Text
+  closedBy       String?  @map("closed_by") @db.Uuid
+  closedAt       DateTime @default(now()) @map("closed_at") @db.Timestamptz(6)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("cash_closings")
+}
+
+// ---------- التقييمات ----------
+
+model EvaluationTemplate {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  sportId   String?  @map("sport_id") @db.Uuid
+  sport     Sport?   @relation(fields: [sportId], references: [id])
+  criteria  String   @db.Text // JSON: [{key,label,min,max}]
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdBy String?  @map("created_by") @db.Uuid
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  evaluations Evaluation[]
+
+  @@map("evaluation_templates")
+}
+
+model Evaluation {
+  id           String             @id @default(uuid()) @db.Uuid
+  athleteId    String             @map("athlete_id") @db.Uuid
+  athlete      Athlete            @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  templateId   String             @map("template_id") @db.Uuid
+  template     EvaluationTemplate @relation(fields: [templateId], references: [id])
+  coachId      String             @map("coach_id") @db.Uuid
+  coach        Coach              @relation(fields: [coachId], references: [id])
+  evaluationDate DateTime         @map("evaluation_date") @db.Date
+  scores       String             @db.Text // JSON: {criterionKey: value}
+  notes        String?            @db.Text
+  createdAt    DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdBy    String?            @map("created_by") @db.Uuid
+  deletedAt    DateTime?          @map("deleted_at") @db.Timestamptz(6)
+
+  @@index([athleteId, evaluationDate])
+  @@index([coachId])
+  @@map("evaluations")
+}
+
+// ---------- الوثائق ----------
+
+model DocumentType {
+  id        String    @id @default(uuid()) @db.Uuid
+  name      String    @unique
+  isActive  Boolean   @default(true) @map("is_active")
+  sortOrder Int       @default(0) @map("sort_order")
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  documents AthleteDocument[]
+
+  @@map("document_types")
+}
+
+model AthleteDocument {
+  id           String         @id @default(uuid()) @db.Uuid
+  athleteId    String         @map("athlete_id") @db.Uuid
+  athlete      Athlete        @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  documentTypeId String       @map("document_type_id") @db.Uuid
+  documentType DocumentType   @relation(fields: [documentTypeId], references: [id])
+  storageKey   String         @map("storage_key") // خارج المجلد العام
+  originalName String         @map("original_name")
+  mimeType     String         @map("mime_type")
+  sizeBytes    Int            @map("size_bytes")
+  expiryDate   DateTime?      @map("expiry_date") @db.Date
+  status       DocumentStatus @default(ACTIVE)
+  createdAt    DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdBy    String?        @map("created_by") @db.Uuid
+  deletedAt    DateTime?      @map("deleted_at") @db.Timestamptz(6)
+
+  @@index([athleteId])
+  @@index([expiryDate])
+  @@map("athlete_documents")
+}
+
+// ---------- الإشعارات ----------
+
+model Notification {
+  id             String           @id @default(uuid()) @db.Uuid
+  type           NotificationType
+  userId         String?          @map("user_id") @db.Uuid // المستهدف (حسب الدور)
+  roleTarget     UserRole?        @map("role_target") // أو تستهدف دورًا كاملًا
+  title          String
+  body           String?          @db.Text
+  entityType     String?          @map("entity_type")
+  entityId       String?          @map("entity_id") @db.Uuid
+  dedupeKey      String?          @unique @map("dedupe_key") // Idempotent
+  isRead         Boolean          @default(false) @map("is_read")
+  readAt         DateTime?        @map("read_at") @db.Timestamptz(6)
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  deliveries     NotificationDelivery[]
+
+  @@index([userId, isRead])
+  @@index([type])
+  @@map("notifications")
+}
+
+model NotificationDelivery {
+  id             String            @id @default(uuid()) @db.Uuid
+  notificationId String            @map("notification_id") @db.Uuid
+  notification   Notification      @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  channel        NotificationChannel
+  recipient      String
+  status         DeliveryStatus    @default(PENDING)
+  attempts       Int               @default(0)
+  lastError      String?           @map("last_error") @db.Text
+  sentAt         DateTime?         @map("sent_at") @db.Timestamptz(6)
+  createdAt      DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([notificationId])
+  @@map("notification_deliveries")
+}
+
+// ---------- الاستيراد ----------
+
+model ImportJob {
+  id           String       @id @default(uuid()) @db.Uuid
+  entityType   String       @map("entity_type")
+  fileName     String       @map("file_name")
+  storageKey   String       @map("storage_key")
+  status       ImportStatus @default(UPLOADED)
+  columnMapping String?     @map("column_mapping") @db.Text // JSON
+  totalRows    Int          @default(0) @map("total_rows")
+  successRows  Int          @default(0) @map("success_rows")
+  failedRows   Int          @default(0) @map("failed_rows")
+  errorsFileKey String?     @map("errors_file_key")
+  mode         String       @default("skip_invalid") // skip_invalid | abort_on_error
+  createdBy    String?      @map("created_by") @db.Uuid
+  createdAt    DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  completedAt  DateTime?    @map("completed_at") @db.Timestamptz(6)
+
+  @@index([entityType, status])
+  @@map("import_jobs")
+}
+
+// ---------- Audit Log (Append-Only) ----------
+// لا يملك حساب التطبيق صلاحية UPDATE/DELETE — تُسحب بـ REVOKE في الهجرة.
+model AuditLog {
+  id          String       @id @default(uuid()) @db.Uuid
+  userId      String?      @map("user_id") @db.Uuid
+  user        User?        @relation(fields: [userId], references: [id])
+  action      AuditAction
+  entityType  String?      @map("entity_type")
+  entityId    String?      @map("entity_id") @db.Uuid
+  requestId   String?      @map("request_id")
+  ipAddress   String?      @map("ip_address")
+  userAgent   String?      @map("user_agent")
+  before      String?      @db.Text // JSON للكيانات الحساسة
+  after       String?      @db.Text
+  metadata    String?      @db.Text
+  createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([entityType, entityId])
+  @@index([userId])
+  @@index([createdAt])
+  @@index([action])
+  @@map("audit_logs")
+}
+
+// ---------- المهام المجدولة ----------
+
+model JobRun {
+  id         String     @id @default(uuid()) @db.Uuid
+  jobName    String     @map("job_name")
+  status     JobStatus  @default(PENDING)
+  startedAt  DateTime   @default(now()) @map("started_at") @db.Timestamptz(6)
+  finishedAt DateTime?  @map("finished_at") @db.Timestamptz(6)
+  itemsProcessed Int    @default(0) @map("items_processed")
+  error      String?    @db.Text
+  lockKey    String?    @unique @map("lock_key") // منع التشغيل المزدوج
+
+  @@index([jobName, startedAt])
+  @@map("job_runs")
+}
+
+// ---------- النسخ الاحتياطي ----------
+
+model BackupRecord {
+  id         String    @id @default(uuid()) @db.Uuid
+  fileName   String    @map("file_name")
+  storageKey String    @map("storage_key")
+  sizeBytes  BigInt    @map("size_bytes")
+  kind       String    @default("manual") // manual|daily|weekly|monthly
+  checksum   String?
+  createdBy  String?   @map("created_by") @db.Uuid
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  restoredAt DateTime? @map("restored_at") @db.Timestamptz(6)
+
+  @@map("backup_records")
+}
