@@ -24,6 +24,22 @@ const envSchema = z.object({
   LOGIN_LOCKOUT_MINUTES: z.coerce.number().int().positive().default(15),
   SCAN_DEDUP_SECONDS: z.coerce.number().int().positive().default(10),
   BACKUP_DIR: z.string().default('./storage/backups'),
+  /**
+   * تشغيل مهمة النسخ المجدولة (mysqldump). تُعطَّل حيث لا أدوات MySQL على النظام
+   * — مثل دوال Netlify السيرفرية — فيكون النسخ مسؤولية مزوّد القاعدة.
+   */
+  BACKUP_JOB_ENABLED: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((v) => v === 'true'),
+  /**
+   * مفتاح مسار /api/v1/jobs/run لاستدعاء المهام من مجدول خارج العملية
+   * (Netlify scheduled function). غيابه — أو قيمته الفارغة — يُبقي المسار مغلقًا (503).
+   */
+  CRON_SECRET: z.preprocess(
+    (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+    z.string().min(16).optional(),
+  ),
   /** مسار أدوات MySQL/MariaDB عند عدم وجودها في PATH (XAMPP: C:\xampp\mysql\bin). */
   MYSQLDUMP_BIN: z.string().default('mysqldump'),
   MYSQL_BIN: z.string().default('mysql'),

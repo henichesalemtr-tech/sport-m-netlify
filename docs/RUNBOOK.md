@@ -28,12 +28,42 @@ npm run test:e2e                # لا يحتاج أسرار: يستخدم حس�
 - **حدود هذا النموذج:** بلا CSP/HSTS والكوكي `secure` فقط تحت `https://` — الوصول مفترض محلي/داخلي
   (انظر SECURITY.md §8 وADR-15). لا تفتح المنفذ على الإنترنت قبل إضافة CSP بـ nonces وتفعيل TOTP.
 
+## 0.5) النشر على Netlify (قاعدة MySQL إدارية بعيدة)
+
+البناء من Git (Netlify يبني على Linux): اربط المستودع الخاص بمشروع Netlify ثم اضبط
+متغيرات البيئة **بنطاقي Builds + Functions** — ما يُكتب في `netlify.toml` يصل وقت البناء
+فقط ولا تقرأه الدوال أثناء التشغيل:
+
+| المتغير | القيمة على Netlify | لماذا |
+|---|---|---|
+| `DATABASE_URL` | رابط Aiven + `?sslaccept=accept_invalid_certs` | بدون `sslaccept` يفعّل Prisma اتصالًا نصيًا (يُتجاهل `ssl-mode`) |
+| `APP_URL` | `https://<site>.netlify.app` | يجعل كوكي الجلسة `secure` |
+| `APP_SECRET`, `SESSION_SECRET` | 32+ حرفًا (سرّان مستقلان) | توقيع الجلسة/QR |
+| `STORAGE_LOCAL_DIR` | `/tmp/storage/private` | نظام ملفات الدوال للقراءة فقط ما عدا `/tmp` |
+| `BACKUP_DIR` | `/tmp/backups` | نفسه |
+| `BACKUP_JOB_ENABLED` | `false` | لا `mysqldump`/`mysql` على الدوال — النسخ مسؤولية مزوّد القاعدة |
+| `JOBS_IN_PROCESS` | `false` | لا عملية خادم دائمة؛ البديل دالة cron |
+| `CRON_SECRET` | 16+ حرفًا (مُولَّد) | يحمي `POST /api/v1/jobs/run` الذي تستدعيه `netlify/functions/run-jobs.mts` |
+
+- **أول دخول:** لا مزروع مستخدمين على قاعدة الإنتاج — افتح `/setup` وأنشئ أول Super Admin.
+  لا تشغّل `seed:demo` على موقع عام: بياناته الدخولها منشورة في المستودع.
+- **حدود صريحة (موثّقة لا مخفية):** ملفات `/tmp` لحظية — تُفقد عند إعادة النشر أو تبريد
+  الحاوية، فملفات الوثائق/الصور واستيراد Excel لا تُخزَّن دائمًا (يحتاج S3/R2 أو نشر محلي).
+  النسخ الاحتياطي داخل التطبيق معطّل. region الدوال افتراضي `cmh` (الخطة المجانية لا تسمح
+  باختيار منطقة أقرب للقاعدة) فتأخر الاستعلامات عبر الشبكة يبقى ظاهرًا. انظر ADR-17.
+- **تحقق بعد النشر:** `curl -I https://<site>/login` (200)، `GET /api/v1/setup` (يُظهر أن
+  النظام بحاجة لإعداد)، ثم إتمام `/setup` من المتصفح.
+
 ## 1) المهام المجدولة (Worker/Cron)
 
 - **التشغيل المستمر:** `npm run worker` (حلقة كل `WORKER_INTERVAL_MINUTES`، افتراضي 15).
   في Docker: خدمة `worker` في docker-compose.
 - **عبر cron/systemd timer:** `npm run worker -- --once` — كل دورة تسترد أولًا المهام
   المنقطعة (`recoverStaleJobs` — RUNNING أقدم من 60 دقيقة ⇒ FAILED وتحرير القفل).
+- **بيئة سيرفرless (Netlify):** لا حلقة دائمة تعمل هناك — دالة `run-jobs` المجدولة (cron كل
+  15 دقيقة) تستدعي `POST /api/v1/jobs/run` بترويسة `x-cron-secret`. المسار يعيد 503 إن لم
+  يُضبط `CRON_SECRET` و401 عند اختلال المفتاح (✅ مُجرَّب 2026-10-11: 401/503/200 مع تنفيذ
+  الدورات الخمس فعليًا، والنسخ تظهر SKIPPED عند `BACKUP_JOB_ENABLED=false`).
 - **المهام:** `expire-subscriptions` (تعليم المنتهي EXPIRED)، `generate-notifications`
   (تنبيهات انتهاء الاشتراك/الغياب المتتابع/الوثائق… — dedupe_key يمنع التكرار)،
   `expiring-documents`، `backup` (نسخة GFS يومية/أسبوعية/شهرية + احتفاظ)،

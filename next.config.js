@@ -16,6 +16,9 @@ const nextConfig = {
     serverActions: { allowedOrigins: [] },
     // src/instrumentation.ts: مجدول المهام داخل العملية (تنبيهات قرب انتهاء الاشتراك)
     instrumentationHook: true,
+    // الحزم الأصلية (native) يجب أن تبقى خارجية: محرك استعلام Prisma وأرغون2
+    // ثنائيات تُحمَّل عند التشغيل؛ ضمّها في حزمة الدالة يُعطّلها على Netlify.
+    serverComponentsExternalPackages: ['@prisma/client', 'argon2'],
   },
   async headers() {
     return [

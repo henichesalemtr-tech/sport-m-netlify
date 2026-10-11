@@ -8,6 +8,7 @@ import { backupService } from '@/modules/backups/service';
 import { scheduledKind } from '@/modules/backups/retention';
 import { todayIn } from '@/shared/dates';
 import { appTimeZone } from '@/shared/config/settings';
+import { getEnv } from '@/shared/config/env';
 import { runJob, dailyLockKey } from './runner';
 import type { JobTaskResult, JobOutcome } from './runner';
 
@@ -25,6 +26,16 @@ export async function runBackup(now: Date): Promise<JobTaskResult> {
 }
 
 export async function run(now: Date): Promise<JobOutcome> {
+  // بلا أدوات MySQL على النظام (دوال Netlify السيرفرية) لا جدوى من تشغيلها كل مرة:
+  // تُعطَّل صراحةً وتصبح النسخ مسؤولية مزوّد القاعدة.
+  if (!getEnv().BACKUP_JOB_ENABLED) {
+    return {
+      status: 'SKIPPED',
+      jobRunId: null,
+      itemsProcessed: 0,
+      message: 'مهمة النسخ معطّلة (BACKUP_JOB_ENABLED=false)',
+    };
+  }
   const dayKey = todayIn(appTimeZone(), now);
   return runJob(jobName, dailyLockKey(jobName, dayKey), () => runBackup(now));
 }

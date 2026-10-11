@@ -1,0 +1,28 @@
+# إعداد النشر على Netlify — Next.js 14 (App Router) + Prisma/MySQL.
+#
+# لماذا هذا الملف: Netlify يحوّل مسارات API وصفحات SSR إلى دوال سيرفرية، وبيئة
+# الدوال قابلة للقراءة فقط (ما عدا /tmp).
+#
+# تنبيه يُخطئ فيه كثيرًا: متغيرات البيئة في هذا الملف تُحقن وقت **البناء فقط**،
+# والدوال لا تقرأها أثناء التشغيل. لذلك كل ما يخص وقت التشغيل (DATABASE_URL،
+# APP_URL، STORAGE_LOCAL_DIR، BACKUP_DIR، JOBS_IN_PROCESS، BACKUP_JOB_ENABLED،
+# APP_SECRET، SESSION_SECRET، CRON_SECRET) يُضبط في واجهة/API Netlify بالنطاقات
+# builds + functions — انظر docs/RUNBOOK.md §0.5. القيم السرية لا تُكتب هنا أصلًا
+# لأن هذا الملف يُلتقط في Git.
+#
+# ملاحظة TLS إلزامية: Prisma 5.22 مع MySQL لا يفعّل التشفير إلا بوجود sslaccept في
+# الرابط؛ صيغة Aiven (ssl-mode=REQUIRED) تُتجاهل والاتصال يتم نصيًا (مُجرَّب).
+
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+  [build.environment]
+    NODE_VERSION = "22"
+    NEXT_TELEMETRY_DISABLED = "1"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+[functions]
+  directory = "netlify/functions"

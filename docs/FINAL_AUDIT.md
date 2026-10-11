@@ -164,3 +164,42 @@ E2E **60/60** · أرقام لا تصف بيئة MariaDB الحالية ولا �
    المستودع أصلًا، و`adminSession` تُرجع الكلمة الصالحة فعليًا ليستخدمها تسجيل الدخول من
    المتصفح (`tests/e2e/40-import-ui.spec.ts`) بدل افتراض `E2E_PASSWORD`. حساب `seed` المرجعي
    لم تعد الاختبارات تمسّه. نتيجة التشغيل بعد الإصلاح: `npx playwright test` ✅ 66/66 (2026-10-11).
+
+## ط) صيانة 2026-10-12: MySQL 8.4 إدارية بعيدة (Aiven) + تجهيز Netlify
+
+### عيبا محمولية حقيقيان لم يظهرا إلا على MySQL 8.4 بعيدة (مُصلَحة، بالتشغيل)
+
+1. **`Invalid default value for 'registration_date'`** عند `prisma db push`: العمودان
+   `Athlete.registrationDate` و`GroupMember.joinedAt` كانا `DateTime @db.Date @default(now())`.
+   MariaDB 10.11 يتسامح مع الافتراضي الزمني على نوع `DATE`، وMySQL 8.4 يرفضه رفضًا صريحًا.
+   الصيغة العاملة على المحرّكين: `@default(dbgenerated("(CURRENT_DATE)"))` — تحقّق بإعادة
+   `db push` على Aiven (38 جدولًا) ثم على MariaDB المحلية (612ms) بلا أخطاء.
+2. **اتصال غير مُشفَّر بصمت**: `?ssl-mode=REQUIRED` (صيغة JDBC/mysql:// التي يوثّقها Aiven)
+   **لا تُقرأ** من Prisma 5.22؛ الدليل تشغيلي لا نظري — `SHOW SESSION STATUS LIKE 'Ssl_%'`
+   أعطى `Ssl_cipher`/`Ssl_version` فارغَين مع `ssl-mode=REQUIRED` و`sslmode=require` و`tls=true`
+   وبلا وسائط، وأعطت `TLSv1.2 / ECDHE-RSA-AES256-GCM-SHA384` مع `?sslaccept=accept_invalid_certs`.
+   كما أن `sslmode=verify-full` يُتجاهل (لا تحقق من هوية الشهادة بلا ملف CA الخاص بـ Aiven).
+   النتيجة موثّقة في `.env.example` و`netlify.toml` وRUNBOOK §0.5 وADR-17؛ السلسلة المعتمدة:
+   `...?sslaccept=accept_invalid_certs&connection_limit=8`.
+
+### فروق بيئية رصدت أثناء التحقق (لا أخطاء تطبيق)
+
+- MySQL 8.4 أزالت متغيّر `@@have_ssl` (البديل `@@require_secure_transport`، وكان `0`: الاتصال
+  المشفَّر مسموح لا مفروض، فالإلزام على عهدة سلسلة الوصل لا الخادم)، و`CHECK_CONSTRAINTS`
+  لا يملك عمود `TABLE_NAME` (البديل `TABLE_CONSTRAINTS WHERE CONSTRAINT_TYPE='CHECK'`).
+- الترتيب الافتراضي `utf8mb4_0900_ai_ci` و`sql_mode` يشمل `ANSI_QUOTES` و`ONLY_FULL_GROUP_BY`
+  و`PIPES_AS_CONCAT` و`STRICT_ALL_TABLES`؛ لم يُلاحظ انحراف سلوك بعد تطبيق القيود والزرع
+  والدخان التطبيقي وE2E (11/11 سطح مكتب) ضد هذه القاعدة.
+- خطأ تسلسلي: `BigInt` غير قابل لـ JSON في سكربت فحص مؤقت (عولج بتحويل `Number`)، وتمرير
+  `datasources: [{name,url}]` في Prisma كان **يطبع سلسلة الوصل الحاملة للاعتماديات** في رسالة
+  الخطأ — البديل `{ db: { url } }`، مع إخفاء `mysql://…` من كل مخرجات الفحص.
+
+### ما بقي غير مُتحقَّق منه في هذا المسار (بصدق)
+
+- **النشر الفعلي على Netlify**: البناء على منصّات Netlify لم يُشغَّل، والرابط الحيّ لم يُفتح؛
+  المتغيّرات السرّية الأربعة وأمر رفع المستودع بيد المالك. لذا لم تُختبر الدالة المجدولة
+  على موقع منشور، ولا سلوك `/tmp` كوعاء تخزين/نسخ داخل الدوال.
+- **نقل الاعتماديات**: إخراج `@prisma/client` و`argon2` من حزمة الدوال مضبوط في
+  `next.config.js` ومقبول نوعيًا ومحليًا، لكن صحّة ربطه على Linux الخاص بـ Netlify لم تُجرَّب.
+- النسخ الاحتياطي على المنصّة مُعطّل قصداً (`BACKUP_JOB_ENABLED=false`)؛ التحقّق التشغيلي
+  الوحيد هو مسار `SKIPPED` نفسه (503/401/200 + `backup: SKIPPED`)، لا نسخة حقيقية من الموقع.

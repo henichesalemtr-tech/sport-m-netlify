@@ -49,5 +49,6 @@ playwright/.cache/
 Thumbs.db
 *.tsbuildinfo
 .vercel
+.netlify/
 .idea/
 .vscode/

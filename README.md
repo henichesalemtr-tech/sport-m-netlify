@@ -148,6 +148,22 @@ docker compose --profile proxy up -d   # nginx + HTTPS (شهاداتك في dock
 
 تفاصيل كاملة: `docs/DEPLOYMENT.md` (ترتيب الإقلاع، systemd، الأدوار المنفصلة).
 
+### Netlify (قاعدة MySQL إدارية بعيدة)
+
+> **الحالة (2026-10-12): لم يصبح الرابط حيًّا بعد.** التجهيز البرمجي مكتمل والمُتحقَّق منه
+> بالتشغيل، ومتغيّرات الموقع غير السرّية مضبوطة على موقع Netlify
+> `fares-sports-management`؛ النشر نفسه متوقّف على خطتين من المالك: إدخال الأسرار الأربعة
+> في واجهة Netlify (`DATABASE_URL`، `APP_SECRET`، `SESSION_SECRET`، `CRON_SECRET`)، ثم تشغيل
+> أمر رفع المستودع والبناء على منصّات Netlify. القائمة الكاملة للمتغيّرات: `docs/RUNBOOK.md` §0.5.
+
+- **شرط TLS عند كتابة `DATABASE_URL`:** يجب أن تنتهي بـ `?sslaccept=accept_invalid_certs`
+  (يُضاف لها `connection_limit=8`). صيغة `?ssl-mode=REQUIRED` تتجاهلها Prisma 5.22 فتفتح
+  اتصالًا **غير مُشفَّر** بصمت — تحقُّق بالتشغيل عبر `SHOW SESSION STATUS` (ADR-17 §السياق).
+- المجدول داخل العملية معطّل هناك (`JOBS_IN_PROCESS=false`)؛ المهام تعمل عبر دالة Netlify
+  المجدولة `netlify/functions/run-jobs.mts` التي تستدعي `POST /api/v1/jobs/run`.
+- النسخ الاحتياطي الداخلي معطّل (`BACKUP_JOB_ENABLED=false`) لأن `mysqldump` وملفات `/tmp`
+  غير دائمة في بيئة دوال سيرفرية — النسخة تُؤخذ من لوحة مزوّد القاعدة.
+
 ## النسخ الاحتياطي والاستعادة
 
 ```bash
