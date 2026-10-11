@@ -25,8 +25,8 @@ function buildWhere(query: ExpenseListQuery): Prisma.ExpenseWhereInput {
   }
   if (query.q) {
     where.OR = [
-      { description: { contains: query.q, mode: 'insensitive' } },
-      { beneficiary: { contains: query.q, mode: 'insensitive' } },
+      { description: { contains: query.q } },
+      { beneficiary: { contains: query.q } },
     ];
   }
   return where;
@@ -66,7 +66,7 @@ export const expenseRepository = {
     const client = tx ?? prisma;
     return client.expenseCategory.findFirst({
       where: {
-        name: { equals: name, mode: 'insensitive' },
+        name: { equals: name },
         ...(excludeId ? { id: { not: excludeId } } : {}),
       },
     });

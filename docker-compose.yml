@@ -1,37 +1,39 @@
 # ============================================================
 # docker-compose — نظام إدارة رياضية
-# الخدمات: db (PostgreSQL 16) + app (Next.js) + worker (المهام المجدولة)
+# الخدمات: db (MariaDB 11) + app (Next.js) + worker (المهام المجدولة)
 #          + proxy (nginx/TLS — اختياري عبر profile: proxy)
 #
-# لم يُختبر هذا الملف في بيئة التوثيق (لا docker هنا) — NOT VERIFIED.
+# لم يُختبر هذا الملف بعد النقل إلى MySQL — NOT VERIFIED (المسار المُختبَر محليًا هو XAMPP/localhost).
 #
 # التهيئة الأولى (بعد docker compose up -d db):
-#   docker compose run --rm app npx prisma migrate deploy
-#   docker compose run --rm app bash -c 'psql "$DATABASE_URL" -f prisma/raw-constraints.sql'
+#   docker compose run --rm app npx prisma db push
+#   docker compose run --rm app bash -c 'mysql -h db -u root -p"$MYSQL_ROOT_PASSWORD" sports_management < prisma/raw-constraints.sql'
 #   docker compose run --rm app npm run seed
-# ملاحظة: psql يقرأ DATABASE_URL من بيئة الحاوية (env_file: .env).
+# ملاحظة: mysql يقرأ DATABASE_URL من بيئة الحاوية (env_file: .env).
 # ============================================================
 
 services:
   db:
-    image: postgres:16-alpine
+    image: mariadb:11
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-sms_user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?حدد POSTGRES_PASSWORD في .env}
-      POSTGRES_DB: ${POSTGRES_DB:-sports_management}
+      MARIADB_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?حدد MYSQL_ROOT_PASSWORD في .env}
+      MARIADB_DATABASE: ${MYSQL_DATABASE:-sports_management}
       TZ: ${APP_TIMEZONE:-Africa/Algiers}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - dbdata:/var/lib/mysql
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-sms_user} -d ${POSTGRES_DB:-sports_management}']
+      test: ['CMD-SHELL', 'mysqladmin ping -h 127.0.0.1 -u root -p"$$MARIADB_ROOT_PASSWORD"']
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 20s
+      start_period: 30s
     # لا تُعرَّض القاعدة للإنترنت في الإنتاج — أزلِ المنافذ واجعل الوصول عبر الشبكة الداخلية فقط
     ports:
-      - '127.0.0.1:5432:5432'
+      - '127.0.0.1:3306:3306'
 
   app:
     build:
@@ -41,7 +43,7 @@ services:
     env_file: .env
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://${POSTGRES_USER:-sms_user}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-sports_management}?schema=public
+      DATABASE_URL: mysql://root:${MYSQL_ROOT_PASSWORD}@db:3306/${MYSQL_DATABASE:-sports_management}
       APP_URL: ${APP_URL:-http://localhost:3000}
     depends_on:
       db:
@@ -60,7 +62,7 @@ services:
     env_file: .env
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://${POSTGRES_USER:-sms_user}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-sports_management}?schema=public
+      DATABASE_URL: mysql://root:${MYSQL_ROOT_PASSWORD}@db:3306/${MYSQL_DATABASE:-sports_management}
       WORKER_INTERVAL_MINUTES: ${WORKER_INTERVAL_MINUTES:-15}
     depends_on:
       db:
@@ -87,6 +89,6 @@ services:
       - ./docker/certs:/etc/nginx/certs:ro
 
 volumes:
-  pgdata:
+  dbdata:
   storage_private:
   storage_backups:

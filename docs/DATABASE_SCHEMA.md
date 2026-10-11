@@ -1,13 +1,12 @@
 # مخطط قاعدة البيانات (DATABASE_SCHEMA)
 
-> **NOT VERIFIED / لم يُتحقق منه:** هذا التوثيق مشتق مباشرة من `prisma/schema.prisma`
-> و`prisma/raw-constraints.sql`، لكنه لم يُطبَّق على PostgreSQL حقيقي في بيئة التوثيق
-> (لا يتوفر node/docker/postgres). للتحقق: `npx prisma migrate dev` ثم
-> `psql "$DATABASE_URL" -f prisma/raw-constraints.sql` ثم `\d+ <table>`.
+> **مُتحقق منه محليًا:** المخطط طُبِّق فعليًا على MariaDB 10.11 عبر
+> `npx prisma db push` ثم `mysql sports_management < prisma/raw-constraints.sql`،
+> وعملت عليه البذرتان (المرجعية + التجريبية) وتسجيل الدخول ولوحة المؤشرات.
 
-- **المزود:** PostgreSQL (إلزامي للإنتاج — SQLite يفتقد EXCLUDE والفهارس الجزئية).
-- **المعرّفات:** UUID v4 (`@db.Uuid`) لكل الجداول.
-- **الطوابع الزمنية:** `timestamptz(6)` (UTC)، والتواريخ التجارية `date`.
+- **المزود:** MySQL/MariaDB (مسار العمل المحلي: XAMPP) — انظر ADR-13 في `docs/DECISIONS.md`.
+- **المعرّفات:** UUID v4 (`@db.Char(36)`) لكل الجداول — يولّده Prisma في العميل.
+- **الطوابع الزمنية:** `datetime(3)` بقيم UTC، والتواريخ التجارية `date`.
 - **المال:** `BigInt` بأصغر وحدة (minor units) — انظر `docs/BUSINESS_RULES.md`.
 
 ## أعمدة مشتركة (نمط موحّد)
@@ -67,7 +66,7 @@ erDiagram
 
 | الجدول | الأعمدة الرئيسية | القيود/العلاقات |
 |--------|------------------|-----------------|
-| `users` | email (فريد), username (فريد), full_name, password_hash (Argon2id), role (enum: SUPER_ADMIN/ADMIN/RECEPTION/COACH/ACCOUNTANT/VIEWER), status, must_change_password, totp_enabled, totp_secret_hash, last_login_at, failed_login_count, locked_until, linked_coach_id | `deletedAt` + فهرس جزئي فريد على email؛ linked_coach_id فريد → coaches |
+| `users` | email (فريد), username (فريد), full_name, password_hash (Argon2id), role (enum: SUPER_ADMIN/ADMIN/RECEPTION/COACH/ACCOUNTANT/VIEWER), status, must_change_password, totp_enabled, totp_secret_hash, last_login_at, failed_login_count, locked_until, linked_coach_id | `deletedAt` + قيد `@unique` كامل على email (لا فهرس جزئي في MySQL — التفرّد الواعي بالحذف الناعم تُفحصه الخدمة قبل الإدراج)؛ linked_coach_id فريد → coaches |
 | `permissions` | code (فريد مثل `athletes.view`), module, description, is_system | مصدرها `catalog.ts` — تُبذر بـ `scripts/seed.ts` |
 | `user_role_permissions` | role, permission_id, granted | `@@unique([role, permission_id])`؛ تخصيصات فوق المصفوفة الافتراضية |
 | `sessions` | user_id, token_hash (فريد), ip_address, user_agent, expires_at (idle), absolute_exp, revoked_at | حذف تتالي مع المستخدم؛ فهارس على user_id وexpires_at |
@@ -78,9 +77,9 @@ erDiagram
 | الجدول | الأعمدة الرئيسية | ملاحظات |
 |--------|------------------|---------|
 | `settings` | key (فريد), value (text), value_type (string/number/boolean/json), group, description, updated_by | لا قيم صلبة في الكود — كل السلوك القابل للضبط هنا (انظر ASSUMPTIONS) |
-| `sports` | name, name_en, color, is_active, sort_order | فهرس جزئي فريد `lower(name) WHERE deleted_at IS NULL` |
+| `sports` | name, name_en, color, is_active, sort_order | فهرس `name` عادي (غير فريد)؛ التفرّد الواعي بالحذف الناعم يُفحص في الخدمة (`sports/repository.ts :: findByName` بـ `deletedAt: null`) — لا فهرس جزئي في MySQL |
 | `age_categories` | name, kind (NORMAL/SENIOR), min_age, max_age (null=أكابر), season_start_month (افتراضي 9), sort_order | CHECK: `max_age >= min_age` (SQL خام) |
-| `venues` | name, type (HALL/FIELD/COURT/POOL/GYM/OTHER), capacity, status, location | فهرس جزئي فريد على lower(name) |
+| `venues` | name, type (HALL/FIELD/COURT/POOL/GYM/OTHER), capacity, status, location | فهرس `name` عادي (غير فريد) + فحص التفرّد في الخدمة (لا `lower(name)` جزئي في MySQL) |
 | `payment_methods` | name (فريد), is_active, sort_order | ديناميكية (ليست enum) |
 | `expense_categories` | name (فريد), is_active, sort_order | |
 | `document_types` | name (فريد), is_active, sort_order | |
@@ -89,8 +88,8 @@ erDiagram
 
 | الجدول | الأعمدة الرئيسية | القيود/العلاقات |
 |--------|------------------|-----------------|
-| `athletes` | registration_no (فريد جزئيًا), first/last_name, photo_url, gender, birth_date (date), phone, email, address, sport_id→sports, age_category_id→age_categories, registration_date, status (ACTIVE/INACTIVE/SUSPENDED/WITHDRAWN/BLOCKED), emergency_name/phone, **حقول حساسة:** medical_notes, blood_type, allergies, image_consent, scan_code_hash (فريد) + scan_code_version | فهرس جزئي فريد registration_no؛ فهرس GIN trgm على الاسم للبحث؛ الحقول الطبية خلف `athletes.view_sensitive` |
-| `parents` | first/last_name, phone (فهرس جزئي), phone2, email, address, relationship | |
+| `athletes` | registration_no (فريد), first/last_name, photo_url, gender, birth_date (date), phone, email, address, sport_id→sports, age_category_id→age_categories, registration_date, status (ACTIVE/INACTIVE/SUSPENDED/WITHDRAWN/BLOCKED), emergency_name/phone, **حقول حساسة:** medical_notes, blood_type, allergies, image_consent, scan_code_hash (فريد) + scan_code_version | قيد `@unique` كامل على registration_no (يشمل صفوف الحذف الناعم — لا فهارس جزئية في MySQL)؛ البحث بالاسم عبر فهرس `(first_name, last_name)` + `contains` مع تطبيع عربي في التطبيق (`normalizeArabic`) بدل GIN/pg_trgm؛ الحقول الطبية خلف `athletes.view_sensitive` |
+| `parents` | first/last_name, phone (فهرس عادي), phone2, email, address, relationship | |
 | `athlete_parents` | athlete_id, parent_id, relationship, is_primary, is_payer, is_emergency | `@@unique([athlete_id, parent_id])`؛ حذف تتالي |
 
 ### المجموعات والجدولة
@@ -99,9 +98,9 @@ erDiagram
 |--------|------------------|-----------------|
 | `coaches` | first/last_name, photo_url, phone, email, specialization, certificate, joined_at, is_active | → user عبر users.linked_coach_id |
 | `coach_sports` | coach_id, sport_id | `@@unique([coach_id, sport_id])` |
-| `groups` | name, code (فريد جزئيًا), sport_id (مطلوب), age_category_id, coach_id, venue_id, max_capacity, training_days (JSON), start_time/end_time (HH:mm), status | CHECK: `max_capacity >= 0`؛ **السعة تُفرض برمجيًا بقفل صف `SELECT ... FOR UPDATE`** (groups/service) |
+| `groups` | name, code (فريد — قيد كامل)، sport_id (مطلوب), age_category_id, coach_id, venue_id, max_capacity, training_days (JSON), start_time/end_time (HH:mm), status | CHECK: `max_capacity >= 0`؛ **السعة تُفرض برمجيًا بقفل صف `SELECT ... FOR UPDATE`** (groups/service) |
 | `group_members` | group_id, athlete_id, joined_at, left_at (null=نشط), leave_reason | `@@unique([group_id, athlete_id, left_at])` ⇒ عضوية نشطة واحدة |
-| `training_sessions` | type (TRAINING/MATCH/TOURNAMENT/EXAM/ACTIVITY/MEETING), title, sport_id, group_id, coach_id, venue_id, session_date (date), start_time/end_time (timestamptz), status (SCHEDULED/CANCELLED/COMPLETED), series_id, is_exception | **3 قيود EXCLUDE gist** (مدرب/قاعة/مجموعة — انظر أدناه) |
+| `training_sessions` | type (TRAINING/MATCH/TOURNAMENT/EXAM/ACTIVITY/MEETING), title, sport_id, group_id, coach_id, venue_id, session_date (date), start_time/end_time (datetime(3)), status (SCHEDULED/CANCELLED/COMPLETED), series_id, is_exception | **لا قيود EXCLUDE gist في MySQL** — كشف تعارض المدرب/القاعة/المجموعة في طبقة التطبيق داخل المعاملة (`sessions/recurrence.ts` + `service.ts` ⇒ 409 SESSION_CONFLICT؛ انظر أدناه) |
 | `attendance_records` | athlete_id, session_id, group_id, status (PRESENT/ABSENT/LATE/EXCUSED), method (MANUAL/BULK/QR/BARCODE/EXTERNAL), record_date, recorded_at, recorded_by, minutes_late, consumed_session, idempotency_key (فريد) | `@@unique([athlete_id, session_id])` ⇒ لا تكرار حضور |
 
 ### الاشتراكات والمال
@@ -111,7 +110,7 @@ erDiagram
 | `subscription_types` | name, kind (MONTHLY/QUARTERLY/SEMI_ANNUAL/ANNUAL/SESSIONS/CUSTOM), sport_id, default_price **BigInt**, duration_days, sessions_total, allow_price_edit, is_active | |
 | `subscriptions` | athlete_id, sport_id, group_id, subscription_type_id, start_date/end_date, price, discount_kind (FIXED/PERCENT), discount_value, discount_reason (إلزامي مع خصم), net_amount, paid_amount (مشتق), due_date, status (ACTIVE/EXPIRED/SUSPENDED/RENEWING/CANCELLED), sessions_total/used, suspend_*, cancel_reason, renewed_from_id | CHECK: `end_date >= start_date`؛ CHECK: قيم مالية ≥ 0؛ بلا FK لـ renewed_from_id (مرجع مرن) |
 | `payments` | transaction_no (فريد تسلسلي لكل سنة مالية), athlete_id, subscription_id, amount **BigInt**, discount, net_amount, payment_method_id, payment_date, status (COMPLETED/VOIDED), void_reason/voided_at/voided_by, refunded_amount, employee_id, idempotency_key (فريد), receipt_id (فريد) | CHECK: `amount > 0`؛ **غير قابل للتعديل** — التصحيح بالإلغاء/الاسترداد فقط |
-| `receipts` | receipt_no (فريد), fiscal_year, sequence, payment_id, status, reprint_count, last_reprint_at, template (A4/80mm) | `@@unique([fiscal_year, sequence])` ⇒ تسلسل بلا فجوات بقفل استشاري |
+| `receipts` | receipt_no (فريد), fiscal_year, sequence, payment_id, status, reprint_count, last_reprint_at, template (A4/80mm) | `@@unique([fiscal_year, sequence])` ⇒ تسلسل بلا فجوات بقفل `app_locks` (`lockNamed('receipts:<سنة>')` + `SELECT ... FOR UPDATE`) بدل القفل الاستشاري |
 | `expenses` | amount **BigInt**, category_id, expense_date, description, beneficiary, employee_id, status (ACTIVE/VOIDED), void_reason, attachments (JSON) | CHECK: `amount > 0` |
 | `cash_transactions` | type (OPENING_BALANCE/INCOME/EXPENSE/ADJUSTMENT/REVERSAL), amount **BigInt**, balance_after, reference_type/reference_id, reason, tx_date | **Append-Only** — لا تعديل/حذف برمجيًا |
 | `cash_closings` | closing_date (فريد), expected_amount, counted_amount, difference, reason, closed_by/at | إقفال يومي واحد لكل تاريخ |
@@ -131,29 +130,38 @@ erDiagram
 | الجدول | الأعمدة الرئيسية | ملاحظات |
 |--------|------------------|---------|
 | `import_jobs` | entity_type, file_name, storage_key, status (UPLOADED→…→COMPLETED/FAILED), column_mapping (JSON), total/success/failed_rows, errors_file_key, mode | |
-| `audit_logs` | user_id, action (18 فعلًا), entity_type/entity_id, request_id, ip_address, user_agent, before/after (JSON), metadata | **Append-Only**: يُسحب UPDATE/DELETE من دور التطبيق بـ REVOKE |
+| `audit_logs` | user_id, action (18 فعلًا), entity_type/entity_id, request_id, ip_address, user_agent, before/after (JSON), metadata | **Append-Only على مستوى التطبيق**: لا مسارات UPDATE/DELETE للسجل في `src/modules/audit-logs`؛ لم يُطبَّق `REVOKE` SQLي (انظر البند 6 أدناه) |
 | `job_runs` | job_name, status, started_at/finished_at, items_processed, error, lock_key (فريد) | أقفال المهام المجدولة |
 | `backup_records` | file_name, storage_key, size_bytes **BigInt**, kind (manual/daily/weekly/monthly), checksum (SHA-256), restored_at | |
 
-## قيود SQL الخام (`prisma/raw-constraints.sql`)
+## قيود SQL الخام (`prisma/raw-constraints.sql`) — نسخة MySQL/MariaDB
 
-لا يعبر Prisma عن هذه القيود — تُطبَّق بعد الهجرة (أو تدمج في نهايتها):
+لا يعبر Prisma عن هذه القيود — تُطبَّق بعد `prisma db push` (أو تدمج في نهاية الهجرة):
 
-1. **Extensions**: `btree_gist` (لتعارض الحصص) و`pg_trgm` (للبحث المتسامح).
-2. **فهارس فريدة جزئية** `WHERE deleted_at IS NULL`: users.email,
-   sports.lower(name), venues.lower(name), groups.code, athletes.registration_no —
-   وفهرس parents.phone (غير فريد) — حتى لا يمنع الحذف الناعم إعادة استخدام القيم.
-3. **فهرس بحث GIN**: `athletes (first_name || ' ' || last_name) gin_trgm_ops`.
-4. **EXCLUDE USING gist على training_sessions** — منع تداخل النطاق
-   `[start_time, end_time)` لكل من (coach_id), (venue_id), (group_id)،
-   مستثنيًا الملغى/المحذوف (`WHERE ... status <> 'CANCELLED' AND deleted_at IS NULL`).
-   هذا هو ضمان "لا تعارض" على مستوى القاعدة حتى تحت التزامن.
-5. **CHECK constraints**: subscriptions (end_date ≥ start_date؛ price/net/paid/sessions_used ≥ 0)،
-   payments.amount > 0، expenses.amount > 0، groups.max_capacity ≥ 0،
+1. **CHECK constraints** (تُنفَّذ فعليًا في MariaDB ≥ 10.2 و MySQL ≥ 8.0.16):
+   subscriptions (end_date ≥ start_date؛ price/net/paid/sessions_used ≥ 0)،
+   payments.amount > 0، expenses.amount > 0، `groups`.max_capacity ≥ 0،
    age_categories (max_age ≥ min_age أو null).
-6. **Audit append-only**: `REVOKE UPDATE, DELETE ON audit_logs FROM <app_role>;`
-   — يدويًا، بدور قاعدة بيانات مختلف عن دور التطبيق (انظر SECURITY/DEPLOYMENT).
-7. **Trigger اختياري** `set_updated_at()` (Prisma يدير updated_at أيضًا).
+2. **جدول `app_locks`** — بديل أقفال PostgreSQL الاستشارية: صف لكل قفل مسمّى
+   يُقفل بـ `SELECT ... FOR UPDATE` داخل المعاملة ويُحرَّر عند نهايتها
+   (`src/shared/db/client.ts :: lockNamed`) — تستخدمه الوصولات وأرقام الحركات ودفتر الخزينة.
+3. **كشف تعارض الحصص** (مدرب/قاعة/مجموعة على `[start, end)`): لا يوجد
+   `EXCLUDE USING gist` في MySQL، فيُطبَّق في طبقة التطبيق
+   (`src/modules/sessions/recurrence.ts` + `service.ts` برفض 409 SESSION_CONFLICT)
+   داخل نفس المعاملة (`prisma.$transaction`) بعد `findOverlapping`. لا يوجد قيد DB
+   احتياطي ولا قفل `FOR UPDATE` على صفوف المدرب/القاعة في وحدة sessions؛ الأقفال
+   المتوفرة تسلسليًا هي `app_locks` (الترقيم) و`FOR UPDATE` على صفوف المجموعة
+   (السعة) والاشتراك (الدفع) ⇒ **التزامن المتوازي الثقيل لتعارض الحصص لم يُتحقق منه
+   (NOT VERIFIED)**.
+4. **التفرّد مع الحذف الناعم**: لا فهارس جزئية `WHERE deleted_at IS NULL` في MySQL؛
+   الخدمة تفحص قبل الإدراج (`findByName`/`findByEmail`…) والتفرّد العام يبقى مضمونًا
+   بقيود Prisma. أي إعادة استخدام لقيمة بريد/اسم بعد حذف ناعم تُرفض عند القاعدة
+   وتُبلَّغ برسالة تحقق مفهومة.
+5. **البحث غير الحساس للحالة/للنص العربي**: Collation القاعدة
+   `utf8mb4_unicode_ci` يجعل `contains`/`equals` غير حساسين لحالة الأحرف تلقائيًا؛
+   تطبيع العربي (`normalizeArabic`) يتم في التطبيق بدل `pg_trgm`.
+6. **Audit append-only**: لا REVOKE في Setup المحلي (نفس دور التطبيق) — الحماية
+   الحالية هي غياب مسارات UPDATE/DELETE لسجل التدقيق في `src/modules/audit-logs`.
 
 ## Enums (ملخص)
 

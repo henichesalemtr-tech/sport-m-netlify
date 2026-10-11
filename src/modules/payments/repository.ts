@@ -1,5 +1,5 @@
 import type { Prisma } from '@prisma/client';
-import { prisma, type PrismaTransaction } from '@/shared/db/client';
+import { lockNamed, prisma, type PrismaTransaction } from '@/shared/db/client';
 import { toOrderBy, pagination } from '@/shared/api/query';
 import { parseDateOnly } from '@/shared/dates';
 import type { PaymentListQuery } from './schema';
@@ -37,7 +37,7 @@ function buildWhere(query: PaymentListQuery): Prisma.PaymentWhereInput {
       ...(query.dateTo ? { lte: parseDateOnly(query.dateTo) } : {}),
     };
   }
-  if (query.q) where.transactionNo = { contains: query.q, mode: 'insensitive' };
+  if (query.q) where.transactionNo = { contains: query.q };
   return where;
 }
 
@@ -69,7 +69,7 @@ export const paymentRepository = {
   /** قفل صف الاشتراك (SELECT ... FOR UPDATE) — منع سباق الدفعات المتزامنة (7.11). */
   async lockSubscription(subscriptionId: string, tx: PrismaTransaction): Promise<boolean> {
     const rows = await tx.$queryRaw<{ id: string }[]>`
-      SELECT id FROM subscriptions WHERE id = ${subscriptionId}::uuid AND deleted_at IS NULL FOR UPDATE
+      SELECT id FROM subscriptions WHERE id = ${subscriptionId} AND deleted_at IS NULL FOR UPDATE
     `;
     return rows.length > 0;
   },
@@ -85,11 +85,8 @@ export const paymentRepository = {
 
   /** قفل تسلسلي لأرقام الحركات + عدّاد الدفعات (توليد transactionNo). */
   async lockTransactionSequence(fiscalYear: number, tx: PrismaTransaction): Promise<number> {
-    await tx.$queryRaw`SELECT 1 FROM pg_advisory_xact_lock(7002, ${fiscalYear}::int)`;
-    const rows = await tx.$queryRaw<{ n: number }[]>`
-      SELECT COUNT(*)::int AS n FROM payments
-    `;
-    return (rows[0]?.n ?? 0) + 1;
+    await lockNamed(tx, `payments:${fiscalYear}`);
+    return (await tx.payment.count()) + 1;
   },
 
   async findMethodById(id: string, tx: PrismaTransaction) {

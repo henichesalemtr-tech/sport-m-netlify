@@ -19,10 +19,10 @@ function buildWhere(query: SportListQuery): Prisma.SportWhereInput {
     // بحث متسامح: يحتوي (لا يتأثر بحالة الأحرف) + تطبيع عربي للطرفين
     const q = escapeLike(normalizeArabic(query.q));
     where.OR = [
-      { name: { contains: query.q, mode: 'insensitive' } },
-      { nameEn: { contains: query.q, mode: 'insensitive' } },
+      { name: { contains: query.q } },
+      { nameEn: { contains: query.q } },
       // مطابقة النص المطبّع (ألف/ياء/تاء مربوطة/تشكيل) عبر LIKE
-      { name: { contains: q, mode: 'insensitive' } },
+      { name: { contains: q } },
     ];
   }
   return where;
@@ -53,7 +53,7 @@ export const sportRepository = {
     return client.sport.findFirst({
       where: {
         deletedAt: null,
-        name: { equals: name, mode: 'insensitive' },
+        name: { equals: name },
         ...(excludeId ? { id: { not: excludeId } } : {}),
       },
       select: { id: true, name: true },

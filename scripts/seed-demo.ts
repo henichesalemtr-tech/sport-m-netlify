@@ -6,15 +6,14 @@
  *
  * المتطلبات:
  *  - تشغيل `npm run seed` أولًا (طرق الدفع/فئات المصاريف/الفئات العمرية/الإعدادات).
- *  - قاعدة بيانات PostgreSQL مطبَّقة عليها الهجرة + prisma/raw-constraints.sql.
+ *  - قاعدة MySQL/MariaDB مطبَّق عليها مخطط Prisma (+ prisma/raw-constraints.sql اختياري).
  *
  * ينشئ: مدير تجريبي، أنشطة، قاعة، مدربَين، مجموعتين، أولياء، 8 رياضيين،
  * أنواع اشتراك (شهري/حصص)، اشتراكات (أحدها بخصم 10%)، دفعات بأرقام Idempotency،
  * حصص تدريب لـ 7 أيام، حضور جماعي لحصة اليوم، ومصروفين.
  *
  * التشغيل: npm run seed:demo
- * لم يُشغَّل هذا السكربت في بيئة التوثيق (لا يتوفر node/npm/postgres هنا) —
- * انظر docs/PROGRESS.md.
+ * شُغِّل فعليًا على MariaDB/MySQL محلية (2026-10) — انظر docs/PROGRESS.md.
  */
 import './load-env';
 
@@ -333,7 +332,7 @@ async function main(): Promise<void> {
     sessionsCount++;
   }
   // حصة اليوم لمجموعة الجيدو (وقت مختلف لتجنب تعارض القاعة)
-  const judoToday = await sessionService.create(
+  await sessionService.create(
     {
       type: 'TRAINING',
       title: 'حصة جيدو اليوم (تجريبية)',
@@ -348,6 +347,7 @@ async function main(): Promise<void> {
     meta,
   );
   sessionsCount++;
+  console.log(`[seed-demo] حصص: ${sessionsCount}`);
 
   // ---------- حضور جماعي لحصة اليوم ----------
   const todaySession = await prisma.trainingSession.findFirst({
@@ -361,7 +361,6 @@ async function main(): Promise<void> {
     );
     console.log(`[seed-demo] حضور جماعي: created=${result.created} skipped=${result.skipped.length}`);
   }
-  void judoToday;
 
   // ---------- المصاريف ----------
   const categories = await expenseCategoryService.list();

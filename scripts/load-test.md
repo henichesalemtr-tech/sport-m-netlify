@@ -1,18 +1,20 @@
 # اختبار التحميل (Load Testing) — دليل التشغيل
 
-> **حالة التحقق / Verification status:** لم يُنفَّذ أي اختبار تحميل في بيئة التوثيق
-> (لا يتوفر node/npm/docker/PostgreSQL هنا). الأوامر أدناه جاهزة للتشغيل في بيئة حقيقية،
-> وكل النتائج **NOT VERIFIED / لم يُتحقق منها** حتى تُشغَّل فعليًا. انظر `docs/PERFORMANCE.md`.
+> **حالة التحقق / Verification status:** لم يُنفَّذ أي اختبار تحميل فعليًا — لا قبل الانتقال
+> إلى MySQL/MariaDB ولا بعده. البيئة المحلية الحالية (MariaDB 10.11، أكتوبر 2026) شُغِّل عليها
+> `db push` + القيود الخام + `seed`/`seed:demo` فقط، **بلا** `seed:load` ولا k6 ولا قياسات.
+> كل النتائج **NOT VERIFIED / لم يُتحقق منها** حتى تُشغَّل فعليًا. انظر `docs/PERFORMANCE.md`.
+> الأوامر أدناه بنسخة MySQL/MariaDB (`DATABASE_URL=mysql://root@localhost:3306/sports_management`).
 
 ## 1) تجهيز البيانات (Load Seed)
 
 ```bash
 npm install
-npx prisma migrate dev            # أو migrate deploy للإنتاج-like
-psql "$DATABASE_URL" -f prisma/raw-constraints.sql
+npx prisma db push                  # لا هجرة مولّدة في المستودع (prisma migrate dev عند توليدها)
+mysql -u root sports_management < prisma/raw-constraints.sql
 npm run seed                      # البيانات المرجعية
 npm run seed:load                 # 5,000 رياضي / 100 مجموعة / 50,000 دفعة / 500,000 حضور
-psql "$DATABASE_URL" -c "ANALYZE;"
+mysql -u root sports_management -e "ANALYZE TABLE athletes, payments, attendance_records;"
 ```
 
 الأحجام قابلة للضبط: `LOAD_ATHLETES`, `LOAD_GROUPS`, `LOAD_PAYMENTS`, `LOAD_ATTENDANCE`.
@@ -83,22 +85,25 @@ for i in $(seq 1 50); do
 done | sort -n | awk '{a[NR]=$1} END {print "P95:", a[int(NR*0.95)]}'
 ```
 
-### ج) EXPLAIN ANALYZE للاستعلامات الحرجة
+### ج) تحليل الاستعلامات الحرجة (`ANALYZE FORMAT=JSON` في MariaDB)
+
+MariaDB لا يملك `EXPLAIN (ANALYZE, BUFFERS)` ولا خيار `BUFFERS`؛ الصيغة المكافئة:
+`ANALYZE FORMAT=JSON SELECT ...` (في MySQL 8 استخدم `EXPLAIN ANALYZE SELECT ...`).
 
 ```bash
-psql "$DATABASE_URL" -c "EXPLAIN (ANALYZE, BUFFERS) SELECT * FROM athletes WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT 25;"
-psql "$DATABASE_URL" -c "EXPLAIN (ANALYZE, BUFFERS) SELECT * FROM attendance_records WHERE group_id = '<uuid>' AND record_date BETWEEN '2026-01-01' AND '2026-01-31';"
-psql "$DATABASE_URL" -c "EXPLAIN (ANALYZE, BUFFERS) SELECT * FROM payments WHERE subscription_id = '<uuid>' AND status <> 'VOIDED';"
+mysql -u root sports_management -e "ANALYZE FORMAT=JSON SELECT * FROM athletes WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT 25;"
+mysql -u root sports_management -e "ANALYZE FORMAT=JSON SELECT * FROM attendance_records WHERE group_id = '<uuid>' AND record_date BETWEEN '2026-01-01' AND '2026-01-31';"
+mysql -u root sports_management -e "ANALYZE FORMAT=JSON SELECT * FROM payments WHERE subscription_id = '<uuid>' AND status <> 'VOIDED';"
 ```
 
-> لا توجد مخرجات EXPLAIN ANALYZE موثقة في هذا المستودع لأنها تتطلب قاعدة بيانات حقيقية —
-> تُلتقط في بيئة المستخدم وتُلصق في `docs/PERFORMANCE.md` (الأماكن المخصصة لها معلَّمة بوضوح).
+> لا توجد مخرجات تحليل موثقة في هذا المستودع — تُلتقط في بيئة حقيقية وتُلصق في
+> `docs/PERFORMANCE.md` (الأماكن المخصصة لها معلَّمة بوضوح).
 
 ## 5) التنظيف
 
 ```bash
 # بيانات seed-load كلها ببادئة LOAD- — لحذفها:
-psql "$DATABASE_URL" <<'SQL'
+mysql -u root sports_management <<'SQL'
 DELETE FROM attendance_records WHERE session_id IN (SELECT id FROM training_sessions WHERE title LIKE 'LOAD-%');
 DELETE FROM training_sessions WHERE title LIKE 'LOAD-%';
 DELETE FROM payments WHERE transaction_no LIKE 'LOAD-%';

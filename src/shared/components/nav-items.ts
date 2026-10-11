@@ -4,6 +4,7 @@ import {
   CalendarDays,
   ClipboardCheck,
   DatabaseBackup,
+  FileSpreadsheet,
   FolderOpen,
   GraduationCap,
   MapPin,
@@ -56,6 +57,7 @@ export const NAV_SECTIONS: NavSection[] = [
     labelKey: 'sectionPeople',
     items: [
       { href: '/athletes', labelKey: 'athletes', icon: Users, permissions: ['athletes.view'] },
+      { href: '/imports', labelKey: 'imports', icon: FileSpreadsheet, permissions: ['athletes.import'] },
       { href: '/parents', labelKey: 'parents', icon: UsersRound, permissions: ['parents.view'] },
       { href: '/groups', labelKey: 'groups', icon: Layers, permissions: ['groups.view'] },
       { href: '/coaches', labelKey: 'coaches', icon: GraduationCap, permissions: ['coaches.view'] },

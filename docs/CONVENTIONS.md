@@ -84,7 +84,7 @@ export const athleteService = {
 
 ## الاختبارات
 
-Vitest. اختبارات unit للمنطق المالي/التواريخ/العمر. اختبارات integration للـ services على PostgreSQL حقيقي (تُشغَّل عند توفر البيئة). لا تُضعف اختبارًا لينجح.
+Vitest. اختبارات unit للمنطق المالي/التواريخ/العمر. اختبارات integration للـ services على MySQL/MariaDB حقيقي (تُشغَّل عند توفر البيئة). لا تُضعف اختبارًا لينجح.
 
 ## RTL والواجهة
 

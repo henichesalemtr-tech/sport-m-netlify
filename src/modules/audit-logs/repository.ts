@@ -32,9 +32,9 @@ function buildWhere(query: AuditLogListQuery): Prisma.AuditLogWhereInput {
   }
   if (query.q) {
     where.OR = [
-      { user: { fullName: { contains: query.q, mode: 'insensitive' } } },
-      { user: { email: { contains: query.q, mode: 'insensitive' } } },
-      { entityType: { contains: query.q, mode: 'insensitive' } },
+      { user: { fullName: { contains: query.q } } },
+      { user: { email: { contains: query.q } } },
+      { entityType: { contains: query.q } },
     ];
   }
   return where;

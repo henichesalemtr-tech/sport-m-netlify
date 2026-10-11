@@ -12,7 +12,7 @@ export const importRepository = {
     const where: Prisma.ImportJobWhereInput = {};
     if (query.entityType) where.entityType = query.entityType;
     if (query.status) where.status = query.status;
-    if (query.q) where.fileName = { contains: query.q, mode: 'insensitive' };
+    if (query.q) where.fileName = { contains: query.q };
     const orderBy = toOrderBy(query.sort, SORTABLE);
     const [items, total] = await prisma.$transaction([
       prisma.importJob.findMany({

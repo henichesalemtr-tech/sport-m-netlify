@@ -55,7 +55,8 @@ test.describe('Security & validation', () => {
     expect(res.status()).toBe(200);
     const headers = res.headers();
     expect((headers['x-frame-options'] ?? '').toUpperCase()).toBe('DENY');
-    expect(headers['content-security-policy'] ?? '').toContain("default-src 'self'");
     expect(headers['x-content-type-options'] ?? '').toBe('nosniff');
+    expect(headers['referrer-policy'] ?? '').toBe('strict-origin-when-cross-origin');
+    // لا CSP عمدًا: النظام يعمل محليًا، وCSP كانت تمنع eval الذي يحتاجه تطوير Next.
   });
 });

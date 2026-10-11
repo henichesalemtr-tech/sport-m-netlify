@@ -65,6 +65,10 @@ export interface AthleteImportRow {
   address?: string;
   registrationNo?: string;
   notes?: string;
+  /** اسم النشاط — يُحل إلى sportId مقابل الأنشطة الموجودة في القاعدة. */
+  sport?: string;
+  emergencyName?: string;
+  emergencyPhone?: string;
 }
 
 const athleteRowSchema = z.object({
@@ -82,6 +86,9 @@ const athleteRowSchema = z.object({
     .optional()
     .or(z.literal('').transform(() => undefined)),
   notes: z.string().trim().max(2000).optional().or(z.literal('').transform(() => undefined)),
+  sport: z.string().trim().max(80).optional().or(z.literal('').transform(() => undefined)),
+  emergencyName: z.string().trim().max(120).optional().or(z.literal('').transform(() => undefined)),
+  emergencyPhone: athletePhoneSchema,
 });
 
 /** تطبيع قيم الجنس المقبولة (ذكر/أنثى/M/F...). دالة نقية. */
@@ -93,9 +100,16 @@ export function normalizeGender(raw: string): string {
 }
 
 export function validateAthleteRow(raw: Record<string, string>): RowValidation<AthleteImportRow> {
+  // الخلايا الفارغة في Excel تصل كنص فارغ: تُحذف ليُطبَّق المسار الاختياري
+  // (وإلا مرَّر registrationNo="" فأدرج رياضيان برقم تسجيل فارغ → تعارض القيد الفريد).
+  const trimmed: Record<string, string> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    const v = value?.trim() ?? '';
+    if (v !== '') trimmed[key] = v;
+  }
   const candidate: Record<string, string> = {
-    ...raw,
-    gender: raw.gender ? normalizeGender(raw.gender) : '',
+    ...trimmed,
+    gender: trimmed.gender ? normalizeGender(trimmed.gender) : '',
   };
   if (candidate.gender === '') delete candidate.gender;
   const result = athleteRowSchema.safeParse(candidate);
@@ -127,10 +141,39 @@ export const ATHLETE_ENTITY: ImportEntityDef<AthleteImportRow> = {
     { name: 'email', label: 'البريد الإلكتروني', required: false },
     { name: 'address', label: 'العنوان', required: false },
     { name: 'registrationNo', label: 'رقم التسجيل', required: false, aliases: ['registration_no'] },
+    { name: 'sport', label: 'النشاط', required: false, aliases: ['sport', 'النشاط الرياضي'] },
+    { name: 'emergencyName', label: 'جهة الطوارئ (الاسم)', required: false, aliases: ['emergency_name'] },
+    { name: 'emergencyPhone', label: 'جهة الطوارئ (الهاتف)', required: false, aliases: ['emergency_phone'] },
     { name: 'notes', label: 'ملاحظات', required: false },
   ],
-  templateHeaders: ['الاسم', 'اللقب', 'تاريخ الميلاد', 'الجنس', 'الهاتف', 'البريد الإلكتروني', 'العنوان', 'رقم التسجيل', 'ملاحظات'],
-  templateExample: ['محمد', 'بن علي', '2010-05-14', 'ذكر', '0555123456', '', '', '', ''],
+  templateHeaders: [
+    'الاسم',
+    'اللقب',
+    'تاريخ الميلاد',
+    'الجنس',
+    'الهاتف',
+    'البريد الإلكتروني',
+    'العنوان',
+    'رقم التسجيل',
+    'النشاط',
+    'جهة الطوارئ (الاسم)',
+    'جهة الطوارئ (الهاتف)',
+    'ملاحظات',
+  ],
+  templateExample: [
+    'محمد',
+    'بن علي',
+    '2010-05-14',
+    'ذكر',
+    '0555123456',
+    '',
+    '',
+    '',
+    'كرة القدم',
+    '',
+    '',
+    '',
+  ],
   validateRow: validateAthleteRow,
   duplicateKeys: (v) => ({
     phone: v.phone?.replace(/\s+/g, '') ?? null,

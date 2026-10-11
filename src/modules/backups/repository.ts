@@ -11,7 +11,7 @@ export const backupRepository = {
   async list(query: BackupListQuery): Promise<{ items: BackupRecord[]; total: number }> {
     const where: Prisma.BackupRecordWhereInput = {};
     if (query.kind) where.kind = query.kind;
-    if (query.q) where.fileName = { contains: query.q, mode: 'insensitive' };
+    if (query.q) where.fileName = { contains: query.q };
     const orderBy = toOrderBy(query.sort, SORTABLE);
     const [items, total] = await prisma.$transaction([
       prisma.backupRecord.findMany({
@@ -37,6 +37,17 @@ export const backupRepository = {
   async markRestored(id: string, tx?: PrismaTransaction): Promise<BackupRecord> {
     const client: Db = tx ?? prisma;
     return client.backupRecord.update({ where: { id }, data: { restoredAt: new Date() } });
+  },
+
+  /**
+   * إنشاء/تحديث سجل نسخة بمعرّف معلوم. يُستخدم بعد الاستعادة: ملف mysqldump
+   * يحتوي جدول السجلات كما كان وقت الالتقاط، فاستيراده يمحو صفوف النسخة
+   * المستعاد منها ونسخة الأمان التي سبقتها — رغم بقاء ملفيها على القرص.
+   */
+  async upsertRecord(data: Prisma.BackupRecordUncheckedCreateInput, tx?: PrismaTransaction): Promise<BackupRecord> {
+    const client: Db = tx ?? prisma;
+    const { id, ...fields } = data;
+    return client.backupRecord.upsert({ where: { id }, create: data, update: fields });
   },
 
   async deleteRecord(id: string, tx?: PrismaTransaction): Promise<void> {

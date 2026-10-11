@@ -37,3 +37,9 @@ export const prisma = globalForPrisma.prisma ?? makeClient();
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
 
 export type PrismaTransaction = Parameters<Parameters<PrismaClient['$transaction']>[0]>[0];
+
+/** قفل مسمّى يُحرَّر تلقائيًا بانتهاء المعاملة (commit/rollback). */
+export async function lockNamed(tx: PrismaTransaction, name: string): Promise<void> {
+  await tx.$executeRaw`INSERT IGNORE INTO app_locks (name) VALUES (${name})`;
+  await tx.$queryRaw`SELECT name FROM app_locks WHERE name = ${name} FOR UPDATE`;
+}

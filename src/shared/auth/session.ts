@@ -8,9 +8,12 @@ import { AppError, ErrorCode } from '@/shared/errors';
 export const SESSION_COOKIE = 'sms_session';
 
 function cookieOptions(maxAgeSeconds: number) {
+  // النظام يعمل محليًا عبر http://localhost أولًا: الكوكي الآمنة فقط عند خدمة https فعلية،
+  // وربطها بـ NODE_ENV كان يمنع الدخول في بناء الإنتاج المحلي.
+  const secure = getEnv().APP_URL.startsWith('https://');
   return {
     httpOnly: true,
-    secure: getEnv().NODE_ENV === 'production',
+    secure,
     sameSite: 'lax' as const,
     path: '/',
     maxAge: maxAgeSeconds,

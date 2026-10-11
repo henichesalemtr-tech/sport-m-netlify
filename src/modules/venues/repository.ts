@@ -13,9 +13,9 @@ export const venueRepository = {
     if (query.status) where.status = query.status;
     if (query.q) {
       where.OR = [
-        { name: { contains: query.q, mode: 'insensitive' } },
-        { name: { contains: escapeLike(normalizeArabic(query.q)), mode: 'insensitive' } },
-        { location: { contains: query.q, mode: 'insensitive' } },
+        { name: { contains: query.q } },
+        { name: { contains: escapeLike(normalizeArabic(query.q)) } },
+        { location: { contains: query.q } },
       ];
     }
     const orderBy = toOrderBy(query.sort, SORTABLE);
@@ -40,7 +40,7 @@ export const venueRepository = {
     return client.venue.findFirst({
       where: {
         deletedAt: null,
-        name: { equals: name, mode: 'insensitive' },
+        name: { equals: name },
         ...(excludeId ? { id: { not: excludeId } } : {}),
       },
       select: { id: true, name: true },

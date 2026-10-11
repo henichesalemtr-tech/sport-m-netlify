@@ -51,9 +51,9 @@ export const groupRepository = {
     if (query.q) {
       const q = escapeLike(normalizeArabic(query.q));
       where.OR = [
-        { name: { contains: query.q, mode: 'insensitive' } },
-        { code: { contains: query.q, mode: 'insensitive' } },
-        { name: { contains: q, mode: 'insensitive' } },
+        { name: { contains: query.q } },
+        { code: { contains: query.q } },
+        { name: { contains: q } },
       ];
     }
     const orderBy = toOrderBy(query.sort, SORTABLE);
@@ -79,7 +79,7 @@ export const groupRepository = {
     return client.group.findFirst({
       where: {
         deletedAt: null,
-        code: { equals: code, mode: 'insensitive' },
+        code: { equals: code },
         ...(excludeId ? { id: { not: excludeId } } : {}),
       },
     });
@@ -91,7 +91,7 @@ export const groupRepository = {
    */
   async lockGroupForUpdate(id: string, tx: PrismaTransaction): Promise<boolean> {
     const rows = await tx.$queryRaw<Array<{ id: string }>>`
-      SELECT id FROM groups WHERE id = ${id}::uuid AND deleted_at IS NULL FOR UPDATE
+      SELECT id FROM \`groups\` WHERE id = ${id} AND deleted_at IS NULL FOR UPDATE
     `;
     return rows.length > 0;
   },
@@ -133,10 +133,10 @@ export const groupRepository = {
       const q = escapeLike(normalizeArabic(query.q));
       where.athlete = {
         OR: [
-          { firstName: { contains: query.q, mode: 'insensitive' } },
-          { lastName: { contains: query.q, mode: 'insensitive' } },
-          { firstName: { contains: q, mode: 'insensitive' } },
-          { lastName: { contains: q, mode: 'insensitive' } },
+          { firstName: { contains: query.q } },
+          { lastName: { contains: query.q } },
+          { firstName: { contains: q } },
+          { lastName: { contains: q } },
           { registrationNo: { contains: query.q } },
         ],
       };

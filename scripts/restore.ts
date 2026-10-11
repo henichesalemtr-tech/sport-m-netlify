@@ -2,12 +2,12 @@
  * CLI لاستعادة نسخة احتياطية — غلاف حول backupService.restore الذي ينفذ:
  *   1) نسخة أمان تلقائية قبل الاستعادة (pre-restore) — إن فشلت تُلغى العملية.
  *   2) تفعيل وضع الصيانة (Setting: system.maintenanceMode).
- *   3) pg_restore --clean --if-exists.
+ *   3) mysql < ملف النسخة (استيراد SQL نصّي).
  *   4) Audit + تسجيل restoredAt. إنهاء وضع الصيانة عند النجاح فقط.
  *
  * الاستخدام:
  *   npm run restore -- --id=<backupRecordId> --reason="سبب مفصل (10 أحرف على الأقل)"
- *   npm run restore -- --file=backup-daily-2026-01-01T00-00-00.dump --reason="..."
+ *   npm run restore -- --file=backup-daily-2026-01-01T00-00-00.sql --reason="..."
  *   npm run restore -- --list
  *
  * التأكيد: يجب كتابة RESTORE حرفيًا في الطرفية (أو تمرير --confirm=RESTORE
@@ -17,8 +17,11 @@
  * (حقل audit_logs.userId له FK ولا يقبل معرفات وهمية). إن لم يوجد أي
  * Super Admin تُرفض العملية.
  *
- * المتطلبات: pg_restore مثبت وفي PATH.
- * لم يُشغَّل هذا السكربت في بيئة التوثيق (لا يتوفر node/npm/docker/postgres هنا).
+ * المتطلبات: mysql (أدوات عميل MySQL/MariaDB) مثبت وفي PATH أو مُشار إليه بـ MYSQL_BIN.
+ * شُغِّلت فعليًا على MariaDB 10.11 (أكتوبر 2026): استعادة نسخة يدوية نجحت، مع نسخة
+ * أمان تلقائية قبلها، وإنهاء وضع الصيانة بعد النجاح. ملاحظة: الاستيراد يستبدل جدول
+ * backup_records بنسخته القديمة، فتُعيد الخدمة بناء صفوف النسخة المستعاد منها ونسخة
+ * الأمان بعد النجاح، وتُنظِّف سياسة الاحتفاظ أي سجل بلا ملف على القرص.
  */
 import './load-env';
 import { createInterface } from 'node:readline/promises';

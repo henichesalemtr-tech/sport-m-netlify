@@ -34,9 +34,9 @@ function buildWhere(query: SubscriptionListQuery, today: Date): Prisma.Subscript
   if (query.q) {
     where.athlete = {
       OR: [
-        { firstName: { contains: query.q, mode: 'insensitive' } },
-        { lastName: { contains: query.q, mode: 'insensitive' } },
-        { registrationNo: { contains: query.q, mode: 'insensitive' } },
+        { firstName: { contains: query.q } },
+        { lastName: { contains: query.q } },
+        { registrationNo: { contains: query.q } },
       ],
     };
   }
@@ -97,7 +97,7 @@ export const subscriptionRepository = {
   /** قفل صف الاشتراك داخل معاملة (SELECT ... FOR UPDATE) لمنع سباق الدفعات المتزامنة. */
   async lockRow(id: string, tx: PrismaTransaction): Promise<boolean> {
     const rows = await tx.$queryRaw<{ id: string }[]>`
-      SELECT id FROM subscriptions WHERE id = ${id}::uuid AND deleted_at IS NULL FOR UPDATE
+      SELECT id FROM subscriptions WHERE id = ${id} AND deleted_at IS NULL FOR UPDATE
     `;
     return rows.length > 0;
   },

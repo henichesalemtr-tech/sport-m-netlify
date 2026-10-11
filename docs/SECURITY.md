@@ -1,8 +1,11 @@
 # الأمن (SECURITY)
 
-> **NOT VERIFIED / لم يُتحقق منه:** كل ما ورد أدناه وصف للكود المكتوب كما هو.
-> لم يُجرَ أي اختبار اختراقي أو تشغيل فعلي في بيئة التوثيق (لا node/docker/postgres).
-> يجب إجراء فحص أمني حقيقي قبل الإنتاج.
+> **حالة التحقق:** هذا الوصف مُطابَق للكود، وقد **شُغِّلت أجزاء منه فعلًا** على MariaDB 10.11
+> المحلية (2026-10-11): ترويسات الأمان المُرسلة فعلًا، رفض المال غير العشري، 401/403 على
+> المسارات، قراءة/تنزيل ملفات التخزين عبر حارس المسار، ودورة النسخ/الاستعادة.
+> **لم يُجرَ أي اختبار اختراقي**، و`npm audit` لم يُنفَّذ هنا، وعتبات قفل brute-force ورفض
+> Magic Bytes لم تُختبر آليًا، و2FA الحيّ عبر الواجهة لم يُجرَّب — يجب إجراء فحص أمني حقيقي
+> قبل الإنتاج.
 
 ## 1) نموذج التهديد (OWASP Top 10 — 2021)
 
@@ -11,11 +14,11 @@
 | A01 Broken Access Control | تفويض بصلاحيات دقيقة في كل route + نطاق بيانات (own) في الـ Repository + منع IDOR (أدناه) | `shared/permissions/guard.ts`، كل `route.ts` |
 | A02 Cryptographic Failures | Argon2id لكلمات المرور، تجزئة رموز الجلسات/المسح/إعادة الضبط (لا تخزين خام)، HTTPS عبر الوكيل العكسي | `shared/auth/password.ts`، `auth/session.ts` |
 | A03 Injection | Prisma (استعلامات معاملَة) + Zod على كل مدخل | `modules/*/schema.ts` |
-| A04 Insecure Design | ذرّية مالية، Append-Only للخزينة/التدقيق، قيود EXCLUDE في القاعدة | `prisma/raw-constraints.sql` |
-| A05 Security Misconfiguration | فحص env fail-fast عند الإقلاع، ترويسات أمان، CSP | `shared/config/env.ts`، `next.config.js` |
+| A04 Insecure Design | ذرّية مالية، Append-Only للخزينة/التدقيق، قيود CHECK في القاعدة + كشف تعارض الحصص في طبقة التطبيق (MySQL لا يطبّق EXCLUDE gist) | `prisma/raw-constraints.sql`، `src/modules/sessions/recurrence.ts` |
+| A05 Security Misconfiguration | فحص env fail-fast عند الإقلاع، ترويسات أمان (X-Frame-Options/nosniff/Referrer-Policy/Permissions-Policy) — **بلا CSP: مُعطّلة قصداً في نموذج local-first** (§8) | `shared/config/env.ts`، `next.config.js` |
 | A06 Vulnerable Components | `npm run audit:deps` (npm audit) — **يجب تشغيله دوريًا** | package.json |
 | A07 Identification & Authentication Failures | قفل الحساب، رسائل موحدة، TOTP (انظر التحذير أدناه)، إبطال جلسات | `modules/auth/service.ts` |
-| A08 Software & Data Integrity | Idempotency-Key + قيود فريدة، checksum SHA-256 للنسخ الاحتياطية | payments/attendance، backups |
+| A08 Software & Data Integrity | Idempotency-Key + قيود فريدة، checksum SHA-256 للنسخ الاحتياطية — ✅ تحقّق بتشغيل `backup`/`restore` على MariaDB (2026-10-11) | payments/attendance، backups |
 | A09 Logging & Monitoring Failures | Audit log شامل Append-Only + requestId في كل رد | `shared/audit` |
 | A10 SSRF | لا جلب URLs من مدخلات المستخدم (القنوات الخارجية معطلة) | — |
 
@@ -66,7 +69,9 @@
   البايت 8) وpdf فقط — النوع المُعلن من المتصفح لا يُقبل وحده إلا ضمن القائمة المسموحة.
 - حدود حجم: `STORAGE_MAX_IMAGE_MB=5`، `STORAGE_MAX_DOCUMENT_MB=10`.
 - التنزيل حصريًا عبر `/documents/[id]/download` و`/backups/[id]/download`
-  (صلاحية + Audit VIEW_SENSITIVE)، وحماية Path Traversal في بناء مسارات النسخ.
+  (صلاحية + Audit VIEW_SENSITIVE)، وحماية Path Traversal عبر `resolveStoragePath()` في
+  `src/shared/storage/index.ts` (§8) — ✅ مسار القراءة مُجرَّب بالتشغيل عبر رفع الاستيراد
+  وتنزيل ملف الأخطاء على MariaDB (2026-10-11)؛ رفض Magic Bytes للوثائق لم يُختبر.
 
 ## 5) أمان التصدير (CSV Injection)
 
@@ -96,14 +101,24 @@
   خصوصية، موافقة الأولياء، مدة الاحتفاظ، التصريح لدى السلطة المختصة إن لزم).
   هذا المستند ليس استشارة قانونية.
 
-## 8) ترويسات الأمان وCSP (next.config.js)
+## 8) ترويسات الأمان (next.config.js)
 
-تُطبَّق على كل المسارات: `X-Content-Type-Options: nosniff`، `X-Frame-Options: DENY`،
-`Referrer-Policy: strict-origin-when-cross-origin`، `Permissions-Policy` (كاميرا self،
-ميكروفون/موقع معطلة)، `Strict-Transport-Security: max-age=63072000; includeSubDomains; preload`،
-وCSP: `default-src 'self'` مع `script-src/style-src 'self' 'unsafe-inline'`
-(متطلب Next.js الحالي — **يُستحسن تقييده لاحقًا بـ nonces**)، `frame-ancestors 'none'`.
-`poweredByHeader: false`. يمكن تعطيل CSP بـ `ENABLE_CSP=false` (للتشخيص فقط).
+تُطبَّق على كل المسارات (`/:path*`): `X-Content-Type-Options: nosniff`،
+`X-Frame-Options: DENY`، `Referrer-Policy: strict-origin-when-cross-origin`،
+`Permissions-Policy` (كاميرا self، ميكروفون/موقع معطلة)، و`poweredByHeader: false`.
+
+- **CSP وHSTS مُعطّلتان قصداً في نموذج local-first**: كانت `default-src 'self'` مع
+  `'unsafe-inline'` تمنع تشغيل React في وضع التطوير (لا hydration)، فحُذفتا مع ADR-13 بدل
+  أن تُقيَّد CSP بـ nonces. لا يرسل التطبيق ترويسة
+  `Content-Security-Policy` إطلاقًا، و`tests/e2e/30-security.spec.ts` يتحقق من الترويسات
+  **المُرسلة فعلًا** (X-Frame-Options/nosniff/Referrer-Policy) لا من CSP.
+- **المحاذرة:** إن خرج النظام يومًا للإنترنت (وكيل عكسي + HTTPS) فأعد النظر في CSP/HSTS عند
+  الوكيل أو في `next.config.js` مع nonces، لأن الحماية الحالية تعتمد على انعدام السكربتات
+  الخارجية وعلى أن الوصول محلي/داخلي.
+- **مسارات التخزين:** حماية path traversal في قراءة الملفات حصريًا عبر `resolveStoragePath()`
+  في `src/shared/storage/index.ts` — تُحوّل `STORAGE_LOCAL_DIR` إلى مسار مطلق مرة واحدة ثم
+  تفحص بادئة `base + sep`، وترفض `..` والمفاتيح المطلقة. (كان الخلل السابق يقارن النسبي
+  بالمطلق فيرفض **كل** قراءة على Windows؛ ظهر كعطل فعلي في معاينة الاستيراد وملف الأخطاء.)
 
 ## 9) أخطاء وتسريبات
 
@@ -112,9 +127,12 @@
 
 ## 10) قائمة نواقص/توصيات أمنية صريحة (أمانة)
 
-1. TOTP **مُنفّذ الآن** (otplib + سر مشفّر AES-256-GCM بمفتاح من `SESSION_SECRET`، وتحقق يفشل بأمان) — يتطلب migration لعمود `totp_secret`؛ **لم يُختبر بالتشغيل**.
+1. TOTP **مُنفّذ الآن** (otplib + سر مشفّر AES-256-GCM بمفتاح من `SESSION_SECRET`، وتحقق يفشل بأمان) — العمود `totp_secret` موجود عبر `prisma db push` على MariaDB؛ **مُغطّى باختبارات وحدة فقط ولم يُجرَّب تدفقه الحيّ عبر الواجهة**.
 2. `REVOKE` على audit_logs خطوة يدوية — يجب توثيقها في نشر كل بيئة والتحقق منها.
 3. لا يوجد Rate limiting عام على مستوى API حاليًا سوى قفل تسجيل الدخول —
    يُنصح بإضافته عند الوكيل العكسي (nginx `limit_req`) حتى يُنفَّذ في التطبيق.
-4. CSP تتضمن `'unsafe-inline'` للسكربتات — تقيد لاحقًا.
+4. **لا CSP ولا HSTS يُرسلان** (قرارات مقصودة لنموذج local-first — §8 وADR-13): الحماية
+   الحالية تعتمد على انعدام السكربتات الخارجية وعلى أن الوصول شبكة داخلية/جهاز محلي.
+   عند الخروج للإنترنت يجب إضافة CSP بـ nonces (بلا `'unsafe-inline'`) وHSTS عند الوكيل العكسي.
 5. اختبار الاختراق وفحص `npm audit` لم يُنفذا هنا — نفذهما قبل الإنتاج.
+6. عتبات قفل brute-force (5/15د) ورفض Magic Bytes للوثائق: لم تُختبر آليًا.

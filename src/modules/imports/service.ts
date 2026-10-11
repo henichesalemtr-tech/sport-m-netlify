@@ -9,6 +9,7 @@ import { prisma } from '@/shared/db/client';
 import { writeAudit } from '@/shared/audit';
 import { businessRule, notFound, validationError } from '@/shared/errors';
 import { parseDateOnly } from '@/shared/dates';
+import { normalizeArabic } from '@/shared/text/normalize';
 import { readFile, storeImportFile } from '@/shared/storage';
 import { buildCsv } from '@/shared/export/csv';
 import { getSettings } from '@/modules/settings/service';
@@ -76,6 +77,8 @@ interface ValidatedRow {
   errors: Array<{ field: string; message: string }>;
   duplicate: boolean;
   duplicateReason: string | null;
+  /** معرّف النشاط المحلول من عمود «النشاط» (null إن كان العمود فارغًا). */
+  sportId: string | null;
 }
 
 function parseMapping(json: string | null): Record<string, number> | null {
@@ -132,8 +135,8 @@ async function validateRows(
   const rows: ValidatedRow[] = mapped.map((m) => {
     const validation = def.validateRow(m.raw);
     return validation.ok
-      ? { ...m, value: validation.value, errors: [], duplicate: false, duplicateReason: null }
-      : { ...m, value: null, errors: validation.errors, duplicate: false, duplicateReason: null };
+      ? { ...m, value: validation.value, errors: [], duplicate: false, duplicateReason: null, sportId: null }
+      : { ...m, value: null, errors: validation.errors, duplicate: false, duplicateReason: null, sportId: null };
   });
 
   // 1) تكرار داخل الملف نفسه (الهوية: الاسم الكامل + تاريخ الميلاد)
@@ -201,7 +204,31 @@ async function validateRows(
     }
   }
 
+  // 3) حل عمود «النشاط» بالاسم (تطبيع عربي + عدم حساسية للحالة) — اسم غير معروف يُبطل الصف
+  // يُقرأ من البيانات الخام لا من الصف الصالح فقط، ليظهر خطأ النشاط المجهول حتى في الصفوف المرفوضة لسبب آخر.
+  const wanted = rows.filter((r) => (r.raw.sport ?? '').trim() !== '');
+  if (wanted.length > 0) {
+    const sports = await prisma.sport.findMany({ where: { deletedAt: null }, select: { id: true, name: true } });
+    const byName = new Map<string, string>();
+    for (const s of sports) byName.set(normalizeSportName(s.name), s.id);
+    for (const r of wanted) {
+      const id = byName.get(normalizeSportName(r.raw.sport!));
+      if (id) {
+        r.sportId = id;
+      } else {
+        r.value = null;
+        r.sportId = null;
+        r.errors = [...r.errors, { field: 'sport', message: `نشاط غير موجود: ${r.raw.sport}` }];
+      }
+    }
+  }
+
   return rows;
+}
+
+/** مفتاح مطابقة أسماء الأنشطة: تطبيع عربي + حروف صغيرة + إزالة المسافات الزائدة. دالة نقية. */
+export function normalizeSportName(name: string): string {
+  return normalizeArabic(name).trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
 /** بناء ملف أخطاء CSV وتخزينه → مفتاح التخزين. */
@@ -467,6 +494,9 @@ export const importService = {
                 email: v.email ?? null,
                 address: v.address ?? null,
                 notes: v.notes ?? null,
+                sportId: row.sportId,
+                emergencyName: v.emergencyName ?? null,
+                emergencyPhone: v.emergencyPhone ?? null,
                 registrationDate: new Date(),
                 status: 'ACTIVE',
                 createdBy: meta.user.userId,

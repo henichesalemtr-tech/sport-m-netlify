@@ -1,5 +1,5 @@
 import type { CashClosing, CashTransaction, CashTransactionType, Prisma } from '@prisma/client';
-import { prisma, type PrismaTransaction } from '@/shared/db/client';
+import { lockNamed, prisma, type PrismaTransaction } from '@/shared/db/client';
 import { toOrderBy, pagination } from '@/shared/api/query';
 import { parseDateOnly } from '@/shared/dates';
 import type { CashClosingListQuery, CashTransactionListQuery } from './schema';
@@ -18,7 +18,7 @@ function buildTxWhere(query: CashTransactionListQuery): Prisma.CashTransactionWh
       ...(query.dateTo ? { lte: parseDateOnly(query.dateTo) } : {}),
     };
   }
-  if (query.q) where.reason = { contains: query.q, mode: 'insensitive' };
+  if (query.q) where.reason = { contains: query.q };
   return where;
 }
 
@@ -30,7 +30,7 @@ function buildClosingWhere(query: CashClosingListQuery): Prisma.CashClosingWhere
       ...(query.dateTo ? { lte: parseDateOnly(query.dateTo) } : {}),
     };
   }
-  if (query.q) where.reason = { contains: query.q, mode: 'insensitive' };
+  if (query.q) where.reason = { contains: query.q };
   return where;
 }
 
@@ -79,7 +79,7 @@ export const cashRepository = {
 
   /** قفل تسلسلي لكتّاب الدفتر (منع سباق حساب balanceAfter) — استشارة على مستوى المعاملة. */
   async lockLedger(tx: PrismaTransaction): Promise<void> {
-    await tx.$queryRaw`SELECT 1 FROM pg_advisory_xact_lock(7101, 0)`;
+    await lockNamed(tx, 'cash_ledger');
   },
 
   /** آخر رصيد مسجل (balanceAfter لآخر قيد) — داخل معاملة (يفضَّل بعد القفل). */

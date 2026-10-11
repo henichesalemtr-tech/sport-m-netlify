@@ -13,8 +13,8 @@ export const ageCategoryRepository = {
     if (query.isActive === 'false') where.isActive = false;
     if (query.q) {
       where.OR = [
-        { name: { contains: query.q, mode: 'insensitive' } },
-        { name: { contains: escapeLike(normalizeArabic(query.q)), mode: 'insensitive' } },
+        { name: { contains: query.q } },
+        { name: { contains: escapeLike(normalizeArabic(query.q)) } },
       ];
     }
     const orderBy = toOrderBy(query.sort, SORTABLE);
@@ -48,7 +48,7 @@ export const ageCategoryRepository = {
     return client.ageCategory.findFirst({
       where: {
         deletedAt: null,
-        name: { equals: name, mode: 'insensitive' },
+        name: { equals: name },
         ...(excludeId ? { id: { not: excludeId } } : {}),
       },
       select: { id: true, name: true },

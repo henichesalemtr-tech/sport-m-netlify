@@ -9,5 +9,25 @@
     "eqeqeq": ["error", "always"],
     "@typescript-eslint/consistent-type-imports": "warn"
   },
-  "ignorePatterns": ["node_modules/", ".next/", "coverage/", "playwright-report/"]
+  "overrides": [
+    {
+      // ملف إعداد Next يعمل بـ CommonJS (module.exports) — require مطلوب هنا.
+      "files": ["*.config.js"],
+      "rules": {
+        "@typescript-eslint/no-var-requires": "off"
+      }
+    },
+    {
+      // سكربتات سطر الأوامر (seed/backup/restore/worker): مخرجاتها هي console.log نفسه،
+      // فهي ليست أخطاء صامتة كما في بقية التطبيق.
+      "files": ["scripts/**/*.ts"],
+      "rules": { "no-console": "off" }
+    },
+    {
+      // Next.js يقرأ next.config.js بصيغة CommonJS قبل أي تجميع، فـ require هنا مقصود.
+      "files": ["*.config.js", "*.config.ts"],
+      "rules": { "@typescript-eslint/no-var-requires": "off" }
+    }
+  ],
+  "ignorePatterns": ["node_modules/", ".next/", "coverage/", "playwright-report/", "test-results/"]
 }

@@ -1,13 +1,13 @@
 // ============================================================
 // مخطط قاعدة البيانات — نظام إدارة رياضية
-// PostgreSQL مطلوب للإنتاج (قيود EXCLUDE، فهارس جزئية، BIGINT).
-// انظر docs/DATABASE_SCHEMA.md و docs/ASSUMPTIONS.md
+// MySQL/MariaDB (المسار المحلي عبر XAMPP) — انظر docs/DATABASE_SCHEMA.md وADR-13
 //
-// ملاحظة: Prisma لا يدعم أصليًا:
-//   - EXCLUDE USING gist (كشف تعارض الحصص)  → يُطبَّق بهجرة SQL خام (migration.sql)
-//   - الفهارس الجزئية WHERE deleted_at IS NULL → تُطبَّق بهجرة SQL خام
-//   - منع UPDATE/DELETE على audit_logs       → يُطبَّق بـ REVOKE في SQL خام
-// هذه القيود موثّقة ومرفقة في prisma/migrations.
+// فرقان مقصودة عن نسخة PostgreSQL السابقة:
+//   - كشف تعارض الحصص (كان EXCLUDE USING gist) → في طبقة التطبيق
+//     src/modules/sessions/recurrence.ts + قفل صفوف المجموعة FOR UPDATE
+//   - التفرّد مع الحذف الناعم (كانت فهارس جزئية) → فحص الخدمة قبل الإدراج
+//   - الأقفال الاستشارية (كانت pg_advisory_xact_lock) → جدول app_locks + FOR UPDATE
+//   - البحث غير الحساس للحالة → Collation utf8mb4 (بدون mode: 'insensitive')
 // ============================================================
 
 generator client {
@@ -15,7 +15,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "mysql"
   url      = env("DATABASE_URL")
 }
 
@@ -217,7 +217,7 @@ enum AgeCategoryKind {
 // ---------- الهوية والصلاحيات ----------
 
 model User {
-  id                 String      @id @default(uuid()) @db.Uuid
+  id                 String      @id @default(uuid()) @db.Char(36)
   email              String      @unique
   username           String?     @unique
   fullName           String      @map("full_name")
@@ -227,16 +227,16 @@ model User {
   mustChangePassword Boolean     @default(false) @map("must_change_password")
   totpEnabled        Boolean     @default(false) @map("totp_enabled")
   totpSecret         String?     @map("totp_secret")
-  lastLoginAt        DateTime?   @map("last_login_at") @db.Timestamptz(6)
+  lastLoginAt        DateTime?   @map("last_login_at") @db.DateTime(3)
   failedLoginCount   Int         @default(0) @map("failed_login_count")
-  lockedUntil        DateTime?   @map("locked_until") @db.Timestamptz(6)
-  linkedCoachId      String?     @unique @map("linked_coach_id") @db.Uuid
+  lockedUntil        DateTime?   @map("locked_until") @db.DateTime(3)
+  linkedCoachId      String?     @unique @map("linked_coach_id") @db.Char(36)
   linkedCoach        Coach?      @relation(fields: [linkedCoachId], references: [id])
-  createdAt          DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt          DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
-  createdBy          String?     @map("created_by") @db.Uuid
-  updatedBy          String?     @map("updated_by") @db.Uuid
-  deletedAt          DateTime?   @map("deleted_at") @db.Timestamptz(6)
+  createdAt          DateTime    @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt          DateTime    @updatedAt @map("updated_at") @db.DateTime(3)
+  createdBy          String?     @map("created_by") @db.Char(36)
+  updatedBy          String?     @map("updated_by") @db.Char(36)
+  deletedAt          DateTime?   @map("deleted_at") @db.DateTime(3)
   version            Int         @default(0)
 
   sessions           Session[]
@@ -248,12 +248,12 @@ model User {
 }
 
 model Permission {
-  id          String               @id @default(uuid()) @db.Uuid
+  id          String               @id @default(uuid()) @db.Char(36)
   code        String               @unique // مثل athletes.view
   module      String // مثل athletes
-  description String?
+  description String? @db.Text
   isSystem    Boolean              @default(true) @map("is_system")
-  createdAt   DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdAt   DateTime             @default(now()) @map("created_at") @db.DateTime(3)
   rolePerms   UserRolePermission[]
 
   @@index([module])
@@ -262,14 +262,14 @@ model Permission {
 
 // ربط الأدوار (النظامية) بالصلاحيات — قابل للتخصيص من Super Admin
 model UserRolePermission {
-  id           String     @id @default(uuid()) @db.Uuid
+  id           String     @id @default(uuid()) @db.Char(36)
   role         UserRole
-  permissionId String     @map("permission_id") @db.Uuid
+  permissionId String     @map("permission_id") @db.Char(36)
   permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
   granted      Boolean    @default(true)
-  createdBy    String?    @map("created_by") @db.Uuid
-  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt    DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdBy    String?    @map("created_by") @db.Char(36)
+  createdAt    DateTime   @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt    DateTime   @updatedAt @map("updated_at") @db.DateTime(3)
 
   @@unique([role, permissionId])
   @@index([role])
@@ -277,16 +277,16 @@ model UserRolePermission {
 }
 
 model Session {
-  id            String    @id @default(uuid()) @db.Uuid
-  userId        String    @map("user_id") @db.Uuid
+  id            String    @id @default(uuid()) @db.Char(36)
+  userId        String    @map("user_id") @db.Char(36)
   user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   tokenHash     String    @unique @map("token_hash")
   ipAddress     String?   @map("ip_address")
-  userAgent     String?   @map("user_agent")
-  expiresAt     DateTime  @map("expires_at") @db.Timestamptz(6)
-  absoluteExp   DateTime  @map("absolute_exp") @db.Timestamptz(6)
-  revokedAt     DateTime? @map("revoked_at") @db.Timestamptz(6)
-  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  userAgent     String?   @map("user_agent") @db.Text
+  expiresAt     DateTime  @map("expires_at") @db.DateTime(3)
+  absoluteExp   DateTime  @map("absolute_exp") @db.DateTime(3)
+  revokedAt     DateTime? @map("revoked_at") @db.DateTime(3)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.DateTime(3)
 
   @@index([userId])
   @@index([expiresAt])
@@ -294,12 +294,12 @@ model Session {
 }
 
 model PasswordResetToken {
-  id          String    @id @default(uuid()) @db.Uuid
-  userId      String    @map("user_id") @db.Uuid
+  id          String    @id @default(uuid()) @db.Char(36)
+  userId      String    @map("user_id") @db.Char(36)
   tokenHash   String    @map("token_hash")
-  expiresAt   DateTime  @map("expires_at") @db.Timestamptz(6)
-  usedAt      DateTime? @map("used_at") @db.Timestamptz(6)
-  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  expiresAt   DateTime  @map("expires_at") @db.DateTime(3)
+  usedAt      DateTime? @map("used_at") @db.DateTime(3)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.DateTime(3)
 
   @@index([userId])
   @@map("password_reset_tokens")
@@ -309,15 +309,15 @@ model PasswordResetToken {
 
 // إعدادات键/قيمة قابلة للتعديل من الواجهة (لا قيم صلبة في الكود)
 model Setting {
-  id          String   @id @default(uuid()) @db.Uuid
+  id          String   @id @default(uuid()) @db.Char(36)
   key         String   @unique
   value       String   @db.Text
   valueType   String   @default("string") @map("value_type") // string|number|boolean|json
   group       String   @default("general")
-  description String?
-  updatedBy   String?  @map("updated_by") @db.Uuid
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  description String? @db.Text
+  updatedBy   String?  @map("updated_by") @db.Char(36)
+  createdAt   DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.DateTime(3)
 
   @@index([group])
   @@map("settings")
@@ -326,17 +326,17 @@ model Setting {
 // ---------- الأنشطة والفئات والقاعات ----------
 
 model Sport {
-  id          String    @id @default(uuid()) @db.Uuid
+  id          String    @id @default(uuid()) @db.Char(36)
   name        String
   nameEn      String?   @map("name_en")
   color       String?   @default("#2563eb")
   isActive    Boolean   @default(true) @map("is_active")
   sortOrder   Int       @default(0) @map("sort_order")
-  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
-  createdBy   String?   @map("created_by") @db.Uuid
-  updatedBy   String?   @map("updated_by") @db.Uuid
-  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz(6)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.DateTime(3)
+  createdBy   String?   @map("created_by") @db.Char(36)
+  updatedBy   String?   @map("updated_by") @db.Char(36)
+  deletedAt   DateTime? @map("deleted_at") @db.DateTime(3)
   version     Int       @default(0)
 
   groups          Group[]
@@ -351,7 +351,7 @@ model Sport {
 }
 
 model AgeCategory {
-  id          String    @id @default(uuid()) @db.Uuid
+  id          String    @id @default(uuid()) @db.Char(36)
   name        String
   kind        AgeCategoryKind @default(NORMAL)
   minAge      Int?      @map("min_age")
@@ -359,11 +359,11 @@ model AgeCategory {
   seasonStartMonth Int  @default(9) @map("season_start_month")
   sortOrder   Int       @default(0) @map("sort_order")
   isActive    Boolean   @default(true) @map("is_active")
-  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
-  createdBy   String?   @map("created_by") @db.Uuid
-  updatedBy   String?   @map("updated_by") @db.Uuid
-  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz(6)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.DateTime(3)
+  createdBy   String?   @map("created_by") @db.Char(36)
+  updatedBy   String?   @map("updated_by") @db.Char(36)
+  deletedAt   DateTime? @map("deleted_at") @db.DateTime(3)
   version     Int       @default(0)
 
   groups   Group[]
@@ -374,18 +374,18 @@ model AgeCategory {
 }
 
 model Venue {
-  id          String      @id @default(uuid()) @db.Uuid
+  id          String      @id @default(uuid()) @db.Char(36)
   name        String
   type        VenueType   @default(HALL)
   capacity    Int?
   status      VenueStatus @default(AVAILABLE)
   location    String?
   notes       String?     @db.Text
-  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt   DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
-  createdBy   String?     @map("created_by") @db.Uuid
-  updatedBy   String?     @map("updated_by") @db.Uuid
-  deletedAt   DateTime?   @map("deleted_at") @db.Timestamptz(6)
+  createdAt   DateTime    @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt   DateTime    @updatedAt @map("updated_at") @db.DateTime(3)
+  createdBy   String?     @map("created_by") @db.Char(36)
+  updatedBy   String?     @map("updated_by") @db.Char(36)
+  deletedAt   DateTime?   @map("deleted_at") @db.DateTime(3)
   version     Int         @default(0)
 
   groups   Group[]
@@ -398,10 +398,10 @@ model Venue {
 // ---------- المدربون ----------
 
 model Coach {
-  id            String    @id @default(uuid()) @db.Uuid
+  id            String    @id @default(uuid()) @db.Char(36)
   firstName     String    @map("first_name")
   lastName      String    @map("last_name")
-  photoUrl      String?   @map("photo_url")
+  photoUrl      String?   @map("photo_url") @db.Text
   phone         String?
   email         String?
   specialization String?
@@ -409,11 +409,11 @@ model Coach {
   joinedAt      DateTime? @map("joined_at") @db.Date
   isActive      Boolean   @default(true) @map("is_active")
   notes         String?   @db.Text
-  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
-  createdBy     String?   @map("created_by") @db.Uuid
-  updatedBy     String?   @map("updated_by") @db.Uuid
-  deletedAt     DateTime? @map("deleted_at") @db.Timestamptz(6)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.DateTime(3)
+  createdBy     String?   @map("created_by") @db.Char(36)
+  updatedBy     String?   @map("updated_by") @db.Char(36)
+  deletedAt     DateTime? @map("deleted_at") @db.DateTime(3)
   version       Int       @default(0)
 
   linkedUser    User?
@@ -427,10 +427,10 @@ model Coach {
 }
 
 model CoachSport {
-  id       String @id @default(uuid()) @db.Uuid
-  coachId  String @map("coach_id") @db.Uuid
+  id       String @id @default(uuid()) @db.Char(36)
+  coachId  String @map("coach_id") @db.Char(36)
   coach    Coach  @relation(fields: [coachId], references: [id], onDelete: Cascade)
-  sportId  String @map("sport_id") @db.Uuid
+  sportId  String @map("sport_id") @db.Char(36)
   sport    Sport  @relation(fields: [sportId], references: [id], onDelete: Cascade)
 
   @@unique([coachId, sportId])
@@ -440,7 +440,7 @@ model CoachSport {
 // ---------- الأولياء ----------
 
 model Parent {
-  id            String    @id @default(uuid()) @db.Uuid
+  id            String    @id @default(uuid()) @db.Char(36)
   firstName     String    @map("first_name")
   lastName      String    @map("last_name")
   phone         String
@@ -449,11 +449,11 @@ model Parent {
   address       String?   @db.Text
   relationship  String? // صلة القرابة الافتراضية
   notes         String?   @db.Text
-  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
-  createdBy     String?   @map("created_by") @db.Uuid
-  updatedBy     String?   @map("updated_by") @db.Uuid
-  deletedAt     DateTime? @map("deleted_at") @db.Timestamptz(6)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.DateTime(3)
+  createdBy     String?   @map("created_by") @db.Char(36)
+  updatedBy     String?   @map("updated_by") @db.Char(36)
+  deletedAt     DateTime? @map("deleted_at") @db.DateTime(3)
   version       Int       @default(0)
 
   athleteParents AthleteParent[]
@@ -466,19 +466,19 @@ model Parent {
 // ---------- الرياضيون ----------
 
 model Athlete {
-  id              String        @id @default(uuid()) @db.Uuid
+  id              String        @id @default(uuid()) @db.Char(36)
   registrationNo  String        @unique @map("registration_no")
   firstName       String        @map("first_name")
   lastName        String        @map("last_name")
-  photoUrl        String?       @map("photo_url")
+  photoUrl        String?       @map("photo_url") @db.Text
   gender          Gender        @default(MALE)
   birthDate       DateTime      @map("birth_date") @db.Date
   phone           String?
   email           String?
   address         String?       @db.Text
-  sportId         String?       @map("sport_id") @db.Uuid
+  sportId         String?       @map("sport_id") @db.Char(36)
   sport           Sport?        @relation(fields: [sportId], references: [id])
-  ageCategoryId   String?       @map("age_category_id") @db.Uuid
+  ageCategoryId   String?       @map("age_category_id") @db.Char(36)
   ageCategory     AgeCategory?  @relation(fields: [ageCategoryId], references: [id])
   registrationDate DateTime     @default(now()) @map("registration_date") @db.Date
   status          AthleteStatus @default(ACTIVE)
@@ -495,11 +495,11 @@ model Athlete {
   // رمز المسح — عشوائي ≥128بت، قابل للإبطال وإعادة الإنشاء
   scanCodeHash    String?       @unique @map("scan_code_hash")
   scanCodeVersion Int           @default(0) @map("scan_code_version")
-  createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
-  createdBy       String?       @map("created_by") @db.Uuid
-  updatedBy       String?       @map("updated_by") @db.Uuid
-  deletedAt       DateTime?     @map("deleted_at") @db.Timestamptz(6)
+  createdAt       DateTime      @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt       DateTime      @updatedAt @map("updated_at") @db.DateTime(3)
+  createdBy       String?       @map("created_by") @db.Char(36)
+  updatedBy       String?       @map("updated_by") @db.Char(36)
+  deletedAt       DateTime?     @map("deleted_at") @db.DateTime(3)
   version         Int           @default(0)
 
   parents         AthleteParent[]
@@ -520,16 +520,16 @@ model Athlete {
 
 // علاقة عدة-إلى-عدة بين الرياضي والولي
 model AthleteParent {
-  id           String  @id @default(uuid()) @db.Uuid
-  athleteId    String  @map("athlete_id") @db.Uuid
+  id           String  @id @default(uuid()) @db.Char(36)
+  athleteId    String  @map("athlete_id") @db.Char(36)
   athlete      Athlete @relation(fields: [athleteId], references: [id], onDelete: Cascade)
-  parentId     String  @map("parent_id") @db.Uuid
+  parentId     String  @map("parent_id") @db.Char(36)
   parent       Parent  @relation(fields: [parentId], references: [id], onDelete: Cascade)
   relationship String? // صلة القرابة لهذه العلاقة
   isPrimary    Boolean @default(false) @map("is_primary")
   isPayer      Boolean @default(false) @map("is_payer")
   isEmergency  Boolean @default(false) @map("is_emergency")
-  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdAt    DateTime @default(now()) @map("created_at") @db.DateTime(3)
 
   @@unique([athleteId, parentId])
   @@index([parentId])
@@ -539,16 +539,16 @@ model AthleteParent {
 // ---------- المجموعات ----------
 
 model Group {
-  id             String      @id @default(uuid()) @db.Uuid
+  id             String      @id @default(uuid()) @db.Char(36)
   name           String
   code           String      @unique
-  sportId        String      @map("sport_id") @db.Uuid
+  sportId        String      @map("sport_id") @db.Char(36)
   sport          Sport       @relation(fields: [sportId], references: [id])
-  ageCategoryId  String?     @map("age_category_id") @db.Uuid
+  ageCategoryId  String?     @map("age_category_id") @db.Char(36)
   ageCategory    AgeCategory? @relation(fields: [ageCategoryId], references: [id])
-  coachId        String?     @map("coach_id") @db.Uuid
+  coachId        String?     @map("coach_id") @db.Char(36)
   coach          Coach?      @relation(fields: [coachId], references: [id])
-  venueId        String?     @map("venue_id") @db.Uuid
+  venueId        String?     @map("venue_id") @db.Char(36)
   venue          Venue?      @relation(fields: [venueId], references: [id])
   maxCapacity    Int         @map("max_capacity")
   trainingDays   String?     @map("training_days") // JSON: ["SAT","MON"]
@@ -556,11 +556,11 @@ model Group {
   endTime        String?     @map("end_time")
   status         GroupStatus @default(ACTIVE)
   notes          String?     @db.Text
-  createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt      DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
-  createdBy      String?     @map("created_by") @db.Uuid
-  updatedBy      String?     @map("updated_by") @db.Uuid
-  deletedAt      DateTime?   @map("deleted_at") @db.Timestamptz(6)
+  createdAt      DateTime    @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt      DateTime    @updatedAt @map("updated_at") @db.DateTime(3)
+  createdBy      String?     @map("created_by") @db.Char(36)
+  updatedBy      String?     @map("updated_by") @db.Char(36)
+  deletedAt      DateTime?   @map("deleted_at") @db.DateTime(3)
   version        Int         @default(0)
 
   members        GroupMember[]
@@ -573,17 +573,17 @@ model Group {
 }
 
 model GroupMember {
-  id         String    @id @default(uuid()) @db.Uuid
-  groupId    String    @map("group_id") @db.Uuid
+  id         String    @id @default(uuid()) @db.Char(36)
+  groupId    String    @map("group_id") @db.Char(36)
   group      Group     @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  athleteId  String    @map("athlete_id") @db.Uuid
+  athleteId  String    @map("athlete_id") @db.Char(36)
   athlete    Athlete   @relation(fields: [athleteId], references: [id], onDelete: Cascade)
   joinedAt   DateTime  @default(now()) @map("joined_at") @db.Date
   leftAt     DateTime? @map("left_at") @db.Date
-  leaveReason String?  @map("leave_reason")
+  leaveReason String?  @map("leave_reason") @db.Text
   // السعة تُفرض داخل Transaction بقفل صف المجموعة (SELECT ... FOR UPDATE) — 7.6
-  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  createdBy  String?   @map("created_by") @db.Uuid
+  createdAt  DateTime  @default(now()) @map("created_at") @db.DateTime(3)
+  createdBy  String?   @map("created_by") @db.Char(36)
 
   @@unique([groupId, athleteId, leftAt]) // عضوية نشطة واحدة (leftAt null)
   @@index([athleteId])
@@ -594,30 +594,30 @@ model GroupMember {
 // ---------- الجدول والحصص ----------
 
 model TrainingSession {
-  id           String        @id @default(uuid()) @db.Uuid
+  id           String        @id @default(uuid()) @db.Char(36)
   type         SessionType   @default(TRAINING)
   title        String
-  sportId      String?       @map("sport_id") @db.Uuid
+  sportId      String?       @map("sport_id") @db.Char(36)
   sport        Sport?        @relation(fields: [sportId], references: [id])
-  groupId      String?       @map("group_id") @db.Uuid
+  groupId      String?       @map("group_id") @db.Char(36)
   group        Group?        @relation(fields: [groupId], references: [id])
-  coachId      String?       @map("coach_id") @db.Uuid
+  coachId      String?       @map("coach_id") @db.Char(36)
   coach        Coach?        @relation(fields: [coachId], references: [id])
-  venueId      String?       @map("venue_id") @db.Uuid
+  venueId      String?       @map("venue_id") @db.Char(36)
   venue        Venue?        @relation(fields: [venueId], references: [id])
   sessionDate  DateTime      @map("session_date") @db.Date
-  startTime    DateTime      @map("start_time") @db.Timestamptz(6)
-  endTime      DateTime      @map("end_time") @db.Timestamptz(6)
+  startTime    DateTime      @map("start_time") @db.DateTime(3)
+  endTime      DateTime      @map("end_time") @db.DateTime(3)
   description  String?       @db.Text
   status       SessionStatus @default(SCHEDULED)
   // سلسلة التكرار (للحصص المولّدة)
-  seriesId     String?       @map("series_id") @db.Uuid
+  seriesId     String?       @map("series_id") @db.Char(36)
   isException  Boolean       @default(false) @map("is_exception")
-  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt    DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
-  createdBy    String?       @map("created_by") @db.Uuid
-  updatedBy    String?       @map("updated_by") @db.Uuid
-  deletedAt    DateTime?     @map("deleted_at") @db.Timestamptz(6)
+  createdAt    DateTime      @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt    DateTime      @updatedAt @map("updated_at") @db.DateTime(3)
+  createdBy    String?       @map("created_by") @db.Char(36)
+  updatedBy    String?       @map("updated_by") @db.Char(36)
+  deletedAt    DateTime?     @map("deleted_at") @db.DateTime(3)
   version      Int           @default(0)
 
   attendance   AttendanceRecord[]
@@ -633,23 +633,23 @@ model TrainingSession {
 // ---------- الحضور ----------
 
 model AttendanceRecord {
-  id           String           @id @default(uuid()) @db.Uuid
-  athleteId    String           @map("athlete_id") @db.Uuid
+  id           String           @id @default(uuid()) @db.Char(36)
+  athleteId    String           @map("athlete_id") @db.Char(36)
   athlete      Athlete          @relation(fields: [athleteId], references: [id], onDelete: Cascade)
-  sessionId    String           @map("session_id") @db.Uuid
+  sessionId    String           @map("session_id") @db.Char(36)
   session      TrainingSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  groupId      String           @map("group_id") @db.Uuid
+  groupId      String           @map("group_id") @db.Char(36)
   status       AttendanceStatus @default(PRESENT)
   method       AttendanceMethod @default(MANUAL)
   recordDate   DateTime         @map("record_date") @db.Date
-  recordedAt   DateTime         @default(now()) @map("recorded_at") @db.Timestamptz(6)
-  recordedBy   String?          @map("recorded_by") @db.Uuid
+  recordedAt   DateTime         @default(now()) @map("recorded_at") @db.DateTime(3)
+  recordedBy   String?          @map("recorded_by") @db.Char(36)
   minutesLate  Int              @default(0) @map("minutes_late")
   consumedSession Boolean       @default(false) @map("consumed_session") // للاشتراك حسب الحصص
   idempotencyKey String?        @unique @map("idempotency_key")
   notes        String?          @db.Text
-  createdAt    DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt    DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdAt    DateTime         @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt    DateTime         @updatedAt @map("updated_at") @db.DateTime(3)
 
   @@unique([athleteId, sessionId]) // منع تكرار الحضور — 7.8
   @@index([sessionId])
@@ -661,10 +661,10 @@ model AttendanceRecord {
 // ---------- الاشتراكات ----------
 
 model SubscriptionType {
-  id             String               @id @default(uuid()) @db.Uuid
+  id             String               @id @default(uuid()) @db.Char(36)
   name           String
   kind           SubscriptionTypeKind @default(MONTHLY)
-  sportId        String?              @map("sport_id") @db.Uuid
+  sportId        String?              @map("sport_id") @db.Char(36)
   sport          Sport?               @relation(fields: [sportId], references: [id])
   // المبلغ بأصغر وحدة (BIGINT minor units) — ممنوع Float
   defaultPrice   BigInt               @map("default_price")
@@ -672,11 +672,11 @@ model SubscriptionType {
   sessionsTotal  Int?                 @map("sessions_total")
   allowPriceEdit Boolean              @default(true) @map("allow_price_edit")
   isActive       Boolean              @default(true) @map("is_active")
-  createdAt      DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt      DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
-  createdBy      String?              @map("created_by") @db.Uuid
-  updatedBy      String?              @map("updated_by") @db.Uuid
-  deletedAt      DateTime?            @map("deleted_at") @db.Timestamptz(6)
+  createdAt      DateTime             @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt      DateTime             @updatedAt @map("updated_at") @db.DateTime(3)
+  createdBy      String?              @map("created_by") @db.Char(36)
+  updatedBy      String?              @map("updated_by") @db.Char(36)
+  deletedAt      DateTime?            @map("deleted_at") @db.DateTime(3)
   version        Int                  @default(0)
 
   subscriptions  Subscription[]
@@ -686,20 +686,20 @@ model SubscriptionType {
 }
 
 model Subscription {
-  id             String             @id @default(uuid()) @db.Uuid
-  athleteId      String             @map("athlete_id") @db.Uuid
+  id             String             @id @default(uuid()) @db.Char(36)
+  athleteId      String             @map("athlete_id") @db.Char(36)
   athlete        Athlete            @relation(fields: [athleteId], references: [id], onDelete: Cascade)
-  sportId        String?            @map("sport_id") @db.Uuid
-  groupId        String?            @map("group_id") @db.Uuid
+  sportId        String?            @map("sport_id") @db.Char(36)
+  groupId        String?            @map("group_id") @db.Char(36)
   group          Group?             @relation(fields: [groupId], references: [id])
-  subscriptionTypeId String         @map("subscription_type_id") @db.Uuid
+  subscriptionTypeId String         @map("subscription_type_id") @db.Char(36)
   subscriptionType   SubscriptionType @relation(fields: [subscriptionTypeId], references: [id])
   startDate      DateTime           @map("start_date") @db.Date
   endDate        DateTime           @map("end_date") @db.Date
   price          BigInt // minor units
   discountKind   DiscountKind?      @map("discount_kind")
   discountValue  BigInt?            @map("discount_value") @default(0) // مبلغ ثابت (minor) أو نسبة×100
-  discountReason String?            @map("discount_reason") // إلزامي عند وجود خصم
+  discountReason String?            @map("discount_reason") @db.Text // إلزامي عند وجود خصم
   netAmount      BigInt             @map("net_amount") // الصافي = price - discount
   paidAmount     BigInt             @default(0) @map("paid_amount") // مشتق من الدفعات (يُحدَّث في Transaction)
   dueDate        DateTime           @map("due_date") @db.Date
@@ -708,14 +708,14 @@ model Subscription {
   sessionsUsed   Int                @default(0) @map("sessions_used")
   suspendStart   DateTime?          @map("suspend_start") @db.Date
   suspendEnd     DateTime?          @map("suspend_end") @db.Date
-  suspendReason  String?            @map("suspend_reason")
-  cancelReason   String?            @map("cancel_reason")
-  renewedFromId  String?            @map("renewed_from_id") @db.Uuid
-  createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt      DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
-  createdBy      String?            @map("created_by") @db.Uuid
-  updatedBy      String?            @map("updated_by") @db.Uuid
-  deletedAt      DateTime?          @map("deleted_at") @db.Timestamptz(6)
+  suspendReason  String?            @map("suspend_reason") @db.Text
+  cancelReason   String?            @map("cancel_reason") @db.Text
+  renewedFromId  String?            @map("renewed_from_id") @db.Char(36)
+  createdAt      DateTime           @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt      DateTime           @updatedAt @map("updated_at") @db.DateTime(3)
+  createdBy      String?            @map("created_by") @db.Char(36)
+  updatedBy      String?            @map("updated_by") @db.Char(36)
+  deletedAt      DateTime?          @map("deleted_at") @db.DateTime(3)
   version        Int                @default(0)
 
   payments       Payment[]
@@ -730,12 +730,12 @@ model Subscription {
 // ---------- المدفوعات والوصولات ----------
 
 model PaymentMethod {
-  id        String    @id @default(uuid()) @db.Uuid
+  id        String    @id @default(uuid()) @db.Char(36)
   name      String    @unique // نقدًا / تحويل / بطاقة / أخرى — ديناميكية
   isActive  Boolean   @default(true) @map("is_active")
   sortOrder Int       @default(0) @map("sort_order")
-  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdAt DateTime  @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.DateTime(3)
 
   payments  Payment[]
 
@@ -743,31 +743,31 @@ model PaymentMethod {
 }
 
 model Payment {
-  id             String        @id @default(uuid()) @db.Uuid
+  id             String        @id @default(uuid()) @db.Char(36)
   transactionNo  String        @unique @map("transaction_no")
-  athleteId      String        @map("athlete_id") @db.Uuid
+  athleteId      String        @map("athlete_id") @db.Char(36)
   athlete        Athlete       @relation(fields: [athleteId], references: [id], onDelete: Cascade)
-  subscriptionId String        @map("subscription_id") @db.Uuid
+  subscriptionId String        @map("subscription_id") @db.Char(36)
   subscription   Subscription  @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
   amount         BigInt // minor units — غير قابل للتعديل
   discount       BigInt        @default(0)
   netAmount      BigInt        @map("net_amount")
-  paymentMethodId String       @map("payment_method_id") @db.Uuid
+  paymentMethodId String       @map("payment_method_id") @db.Char(36)
   paymentMethod  PaymentMethod @relation(fields: [paymentMethodId], references: [id])
   paymentDate    DateTime      @map("payment_date") @db.Date
   status         PaymentStatus @default(COMPLETED)
-  voidReason     String?       @map("void_reason")
-  voidedAt       DateTime?     @map("voided_at") @db.Timestamptz(6)
-  voidedBy       String?       @map("voided_by") @db.Uuid
+  voidReason     String?       @map("void_reason") @db.Text
+  voidedAt       DateTime?     @map("voided_at") @db.DateTime(3)
+  voidedBy       String?       @map("voided_by") @db.Char(36)
   refundedAmount BigInt        @default(0) @map("refunded_amount")
-  employeeId     String?       @map("employee_id") @db.Uuid
+  employeeId     String?       @map("employee_id") @db.Char(36)
   notes          String?       @db.Text
   idempotencyKey String?       @unique @map("idempotency_key")
-  receiptId      String?       @unique @map("receipt_id") @db.Uuid
+  receiptId      String?       @unique @map("receipt_id") @db.Char(36)
   receipt        Receipt?      @relation(fields: [receiptId], references: [id])
-  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
-  createdBy      String?       @map("created_by") @db.Uuid
+  createdAt      DateTime      @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt      DateTime      @updatedAt @map("updated_at") @db.DateTime(3)
+  createdBy      String?       @map("created_by") @db.Char(36)
 
   @@index([athleteId])
   @@index([subscriptionId, status])
@@ -776,16 +776,16 @@ model Payment {
 }
 
 model Receipt {
-  id            String    @id @default(uuid()) @db.Uuid
+  id            String    @id @default(uuid()) @db.Char(36)
   receiptNo     String    @unique @map("receipt_no") // تسلسلي بلا فجوات لكل سنة مالية
   fiscalYear    Int       @map("fiscal_year")
   sequence      Int // عدّاد داخل السنة — يُحدَّث بقفل الصف
-  paymentId     String?   @map("payment_id") @db.Uuid
+  paymentId     String?   @map("payment_id") @db.Char(36)
   status        PaymentStatus @default(COMPLETED)
   reprintCount  Int       @default(0) @map("reprint_count")
-  lastReprintAt DateTime? @map("last_reprint_at") @db.Timestamptz(6)
+  lastReprintAt DateTime? @map("last_reprint_at") @db.DateTime(3)
   template      String    @default("A4") // A4 | 80mm
-  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.DateTime(3)
 
   payment       Payment?
 
@@ -796,12 +796,12 @@ model Receipt {
 // ---------- المصاريف والخزينة ----------
 
 model ExpenseCategory {
-  id        String    @id @default(uuid()) @db.Uuid
+  id        String    @id @default(uuid()) @db.Char(36)
   name      String    @unique
   isActive  Boolean   @default(true) @map("is_active")
   sortOrder Int       @default(0) @map("sort_order")
-  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdAt DateTime  @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.DateTime(3)
 
   expenses  Expense[]
 
@@ -809,22 +809,22 @@ model ExpenseCategory {
 }
 
 model Expense {
-  id            String          @id @default(uuid()) @db.Uuid
+  id            String          @id @default(uuid()) @db.Char(36)
   amount        BigInt
-  categoryId    String          @map("category_id") @db.Uuid
+  categoryId    String          @map("category_id") @db.Char(36)
   category      ExpenseCategory @relation(fields: [categoryId], references: [id])
   expenseDate   DateTime        @map("expense_date") @db.Date
   description   String?         @db.Text
   beneficiary   String?
-  employeeId    String?         @map("employee_id") @db.Uuid
+  employeeId    String?         @map("employee_id") @db.Char(36)
   status        ExpenseStatus   @default(ACTIVE)
-  voidReason    String?         @map("void_reason")
+  voidReason    String?         @map("void_reason") @db.Text
   attachments   String?         @db.Text // JSON list of storage keys
-  createdAt     DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt     DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
-  createdBy     String?         @map("created_by") @db.Uuid
-  updatedBy     String?         @map("updated_by") @db.Uuid
-  deletedAt     DateTime?       @map("deleted_at") @db.Timestamptz(6)
+  createdAt     DateTime        @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt     DateTime        @updatedAt @map("updated_at") @db.DateTime(3)
+  createdBy     String?         @map("created_by") @db.Char(36)
+  updatedBy     String?         @map("updated_by") @db.Char(36)
+  deletedAt     DateTime?       @map("deleted_at") @db.DateTime(3)
   version       Int             @default(0)
 
   @@index([expenseDate])
@@ -834,16 +834,16 @@ model Expense {
 
 // دفتر حركات الخزينة — Append-Only
 model CashTransaction {
-  id          String              @id @default(uuid()) @db.Uuid
+  id          String              @id @default(uuid()) @db.Char(36)
   type        CashTransactionType
   amount      BigInt // minor units (موجب/سالب حسب النوع)
   balanceAfter BigInt             @map("balance_after")
   referenceType String?           @map("reference_type") // payment|expense|adjustment
-  referenceId String?             @map("reference_id") @db.Uuid
+  referenceId String?             @map("reference_id") @db.Char(36)
   reason      String?             @db.Text
   txDate      DateTime            @map("tx_date") @db.Date
-  createdBy   String?             @map("created_by") @db.Uuid
-  createdAt   DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdBy   String?             @map("created_by") @db.Char(36)
+  createdAt   DateTime            @default(now()) @map("created_at") @db.DateTime(3)
 
   @@index([txDate])
   @@index([type])
@@ -852,15 +852,15 @@ model CashTransaction {
 }
 
 model CashClosing {
-  id             String   @id @default(uuid()) @db.Uuid
+  id             String   @id @default(uuid()) @db.Char(36)
   closingDate    DateTime @unique @map("closing_date") @db.Date
   expectedAmount BigInt   @map("expected_amount")
   countedAmount  BigInt   @map("counted_amount")
   difference     BigInt
   reason         String?  @db.Text
-  closedBy       String?  @map("closed_by") @db.Uuid
-  closedAt       DateTime @default(now()) @map("closed_at") @db.Timestamptz(6)
-  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  closedBy       String?  @map("closed_by") @db.Char(36)
+  closedAt       DateTime @default(now()) @map("closed_at") @db.DateTime(3)
+  createdAt      DateTime @default(now()) @map("created_at") @db.DateTime(3)
 
   @@map("cash_closings")
 }
@@ -868,16 +868,16 @@ model CashClosing {
 // ---------- التقييمات ----------
 
 model EvaluationTemplate {
-  id        String   @id @default(uuid()) @db.Uuid
+  id        String   @id @default(uuid()) @db.Char(36)
   name      String
-  sportId   String?  @map("sport_id") @db.Uuid
+  sportId   String?  @map("sport_id") @db.Char(36)
   sport     Sport?   @relation(fields: [sportId], references: [id])
   criteria  String   @db.Text // JSON: [{key,label,min,max}]
   isActive  Boolean  @default(true) @map("is_active")
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
-  createdBy String?  @map("created_by") @db.Uuid
-  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(6)
+  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+  createdBy String?  @map("created_by") @db.Char(36)
+  deletedAt DateTime? @map("deleted_at") @db.DateTime(3)
 
   evaluations Evaluation[]
 
@@ -885,20 +885,20 @@ model EvaluationTemplate {
 }
 
 model Evaluation {
-  id           String             @id @default(uuid()) @db.Uuid
-  athleteId    String             @map("athlete_id") @db.Uuid
+  id           String             @id @default(uuid()) @db.Char(36)
+  athleteId    String             @map("athlete_id") @db.Char(36)
   athlete      Athlete            @relation(fields: [athleteId], references: [id], onDelete: Cascade)
-  templateId   String             @map("template_id") @db.Uuid
+  templateId   String             @map("template_id") @db.Char(36)
   template     EvaluationTemplate @relation(fields: [templateId], references: [id])
-  coachId      String             @map("coach_id") @db.Uuid
+  coachId      String             @map("coach_id") @db.Char(36)
   coach        Coach              @relation(fields: [coachId], references: [id])
   evaluationDate DateTime         @map("evaluation_date") @db.Date
   scores       String             @db.Text // JSON: {criterionKey: value}
   notes        String?            @db.Text
-  createdAt    DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt    DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
-  createdBy    String?            @map("created_by") @db.Uuid
-  deletedAt    DateTime?          @map("deleted_at") @db.Timestamptz(6)
+  createdAt    DateTime           @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt    DateTime           @updatedAt @map("updated_at") @db.DateTime(3)
+  createdBy    String?            @map("created_by") @db.Char(36)
+  deletedAt    DateTime?          @map("deleted_at") @db.DateTime(3)
 
   @@index([athleteId, evaluationDate])
   @@index([coachId])
@@ -908,12 +908,12 @@ model Evaluation {
 // ---------- الوثائق ----------
 
 model DocumentType {
-  id        String    @id @default(uuid()) @db.Uuid
+  id        String    @id @default(uuid()) @db.Char(36)
   name      String    @unique
   isActive  Boolean   @default(true) @map("is_active")
   sortOrder Int       @default(0) @map("sort_order")
-  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdAt DateTime  @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.DateTime(3)
 
   documents AthleteDocument[]
 
@@ -921,20 +921,20 @@ model DocumentType {
 }
 
 model AthleteDocument {
-  id           String         @id @default(uuid()) @db.Uuid
-  athleteId    String         @map("athlete_id") @db.Uuid
+  id           String         @id @default(uuid()) @db.Char(36)
+  athleteId    String         @map("athlete_id") @db.Char(36)
   athlete      Athlete        @relation(fields: [athleteId], references: [id], onDelete: Cascade)
-  documentTypeId String       @map("document_type_id") @db.Uuid
+  documentTypeId String       @map("document_type_id") @db.Char(36)
   documentType DocumentType   @relation(fields: [documentTypeId], references: [id])
-  storageKey   String         @map("storage_key") // خارج المجلد العام
-  originalName String         @map("original_name")
+  storageKey   String         @map("storage_key") @db.Text // خارج المجلد العام
+  originalName String         @map("original_name") @db.Text
   mimeType     String         @map("mime_type")
   sizeBytes    Int            @map("size_bytes")
   expiryDate   DateTime?      @map("expiry_date") @db.Date
   status       DocumentStatus @default(ACTIVE)
-  createdAt    DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
-  createdBy    String?        @map("created_by") @db.Uuid
-  deletedAt    DateTime?      @map("deleted_at") @db.Timestamptz(6)
+  createdAt    DateTime       @default(now()) @map("created_at") @db.DateTime(3)
+  createdBy    String?        @map("created_by") @db.Char(36)
+  deletedAt    DateTime?      @map("deleted_at") @db.DateTime(3)
 
   @@index([athleteId])
   @@index([expiryDate])
@@ -944,18 +944,18 @@ model AthleteDocument {
 // ---------- الإشعارات ----------
 
 model Notification {
-  id             String           @id @default(uuid()) @db.Uuid
+  id             String           @id @default(uuid()) @db.Char(36)
   type           NotificationType
-  userId         String?          @map("user_id") @db.Uuid // المستهدف (حسب الدور)
+  userId         String?          @map("user_id") @db.Char(36) // المستهدف (حسب الدور)
   roleTarget     UserRole?        @map("role_target") // أو تستهدف دورًا كاملًا
   title          String
   body           String?          @db.Text
   entityType     String?          @map("entity_type")
-  entityId       String?          @map("entity_id") @db.Uuid
+  entityId       String?          @map("entity_id") @db.Char(36)
   dedupeKey      String?          @unique @map("dedupe_key") // Idempotent
   isRead         Boolean          @default(false) @map("is_read")
-  readAt         DateTime?        @map("read_at") @db.Timestamptz(6)
-  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  readAt         DateTime?        @map("read_at") @db.DateTime(3)
+  createdAt      DateTime         @default(now()) @map("created_at") @db.DateTime(3)
 
   deliveries     NotificationDelivery[]
 
@@ -965,16 +965,16 @@ model Notification {
 }
 
 model NotificationDelivery {
-  id             String            @id @default(uuid()) @db.Uuid
-  notificationId String            @map("notification_id") @db.Uuid
+  id             String            @id @default(uuid()) @db.Char(36)
+  notificationId String            @map("notification_id") @db.Char(36)
   notification   Notification      @relation(fields: [notificationId], references: [id], onDelete: Cascade)
   channel        NotificationChannel
   recipient      String
   status         DeliveryStatus    @default(PENDING)
   attempts       Int               @default(0)
   lastError      String?           @map("last_error") @db.Text
-  sentAt         DateTime?         @map("sent_at") @db.Timestamptz(6)
-  createdAt      DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  sentAt         DateTime?         @map("sent_at") @db.DateTime(3)
+  createdAt      DateTime          @default(now()) @map("created_at") @db.DateTime(3)
 
   @@index([notificationId])
   @@map("notification_deliveries")
@@ -983,20 +983,20 @@ model NotificationDelivery {
 // ---------- الاستيراد ----------
 
 model ImportJob {
-  id           String       @id @default(uuid()) @db.Uuid
+  id           String       @id @default(uuid()) @db.Char(36)
   entityType   String       @map("entity_type")
   fileName     String       @map("file_name")
-  storageKey   String       @map("storage_key")
+  storageKey   String       @map("storage_key") @db.Text
   status       ImportStatus @default(UPLOADED)
   columnMapping String?     @map("column_mapping") @db.Text // JSON
   totalRows    Int          @default(0) @map("total_rows")
   successRows  Int          @default(0) @map("success_rows")
   failedRows   Int          @default(0) @map("failed_rows")
-  errorsFileKey String?     @map("errors_file_key")
+  errorsFileKey String?     @map("errors_file_key") @db.Text
   mode         String       @default("skip_invalid") // skip_invalid | abort_on_error
-  createdBy    String?      @map("created_by") @db.Uuid
-  createdAt    DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
-  completedAt  DateTime?    @map("completed_at") @db.Timestamptz(6)
+  createdBy    String?      @map("created_by") @db.Char(36)
+  createdAt    DateTime     @default(now()) @map("created_at") @db.DateTime(3)
+  completedAt  DateTime?    @map("completed_at") @db.DateTime(3)
 
   @@index([entityType, status])
   @@map("import_jobs")
@@ -1005,19 +1005,19 @@ model ImportJob {
 // ---------- Audit Log (Append-Only) ----------
 // لا يملك حساب التطبيق صلاحية UPDATE/DELETE — تُسحب بـ REVOKE في الهجرة.
 model AuditLog {
-  id          String       @id @default(uuid()) @db.Uuid
-  userId      String?      @map("user_id") @db.Uuid
+  id          String       @id @default(uuid()) @db.Char(36)
+  userId      String?      @map("user_id") @db.Char(36)
   user        User?        @relation(fields: [userId], references: [id])
   action      AuditAction
   entityType  String?      @map("entity_type")
-  entityId    String?      @map("entity_id") @db.Uuid
+  entityId    String?      @map("entity_id") @db.Char(36)
   requestId   String?      @map("request_id")
   ipAddress   String?      @map("ip_address")
-  userAgent   String?      @map("user_agent")
+  userAgent   String?      @map("user_agent") @db.Text
   before      String?      @db.Text // JSON للكيانات الحساسة
   after       String?      @db.Text
   metadata    String?      @db.Text
-  createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdAt   DateTime     @default(now()) @map("created_at") @db.DateTime(3)
 
   @@index([entityType, entityId])
   @@index([userId])
@@ -1029,11 +1029,11 @@ model AuditLog {
 // ---------- المهام المجدولة ----------
 
 model JobRun {
-  id         String     @id @default(uuid()) @db.Uuid
+  id         String     @id @default(uuid()) @db.Char(36)
   jobName    String     @map("job_name")
   status     JobStatus  @default(PENDING)
-  startedAt  DateTime   @default(now()) @map("started_at") @db.Timestamptz(6)
-  finishedAt DateTime?  @map("finished_at") @db.Timestamptz(6)
+  startedAt  DateTime   @default(now()) @map("started_at") @db.DateTime(3)
+  finishedAt DateTime?  @map("finished_at") @db.DateTime(3)
   itemsProcessed Int    @default(0) @map("items_processed")
   error      String?    @db.Text
   lockKey    String?    @unique @map("lock_key") // منع التشغيل المزدوج
@@ -1045,15 +1045,22 @@ model JobRun {
 // ---------- النسخ الاحتياطي ----------
 
 model BackupRecord {
-  id         String    @id @default(uuid()) @db.Uuid
+  id         String    @id @default(uuid()) @db.Char(36)
   fileName   String    @map("file_name")
-  storageKey String    @map("storage_key")
+  storageKey String    @map("storage_key") @db.Text
   sizeBytes  BigInt    @map("size_bytes")
   kind       String    @default("manual") // manual|daily|weekly|monthly
   checksum   String?
-  createdBy  String?   @map("created_by") @db.Uuid
-  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  restoredAt DateTime? @map("restored_at") @db.Timestamptz(6)
+  createdBy  String?   @map("created_by") @db.Char(36)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.DateTime(3)
+  restoredAt DateTime? @map("restored_at") @db.DateTime(3)
 
   @@map("backup_records")
+}
+
+// أقفال تسلسلية على مستوى المعاملة (SELECT ... FOR UPDATE) — بديل advisory locks
+model AppLock {
+  name String @id @db.VarChar(64)
+
+  @@map("app_locks")
 }

@@ -54,9 +54,9 @@ function buildWhere(query: UserListQuery): Prisma.UserWhereInput {
   if (query.status) where.status = query.status;
   if (query.q) {
     where.OR = [
-      { email: { contains: query.q, mode: 'insensitive' } },
-      { username: { contains: query.q, mode: 'insensitive' } },
-      { fullName: { contains: query.q, mode: 'insensitive' } },
+      { email: { contains: query.q } },
+      { username: { contains: query.q } },
+      { fullName: { contains: query.q } },
     ];
   }
   return where;
@@ -91,7 +91,7 @@ export const userRepository = {
   findByEmail(email: string, excludeId: string | undefined, db: Db = prisma): Promise<SafeUser | null> {
     return db.user.findFirst({
       where: {
-        email: { equals: email, mode: 'insensitive' },
+        email: { equals: email },
         ...(excludeId ? { id: { not: excludeId } } : {}),
       },
       select: USER_SAFE_SELECT,
@@ -101,7 +101,7 @@ export const userRepository = {
   findByUsername(username: string, excludeId: string | undefined, db: Db = prisma): Promise<SafeUser | null> {
     return db.user.findFirst({
       where: {
-        username: { equals: username, mode: 'insensitive' },
+        username: { equals: username },
         ...(excludeId ? { id: { not: excludeId } } : {}),
       },
       select: USER_SAFE_SELECT,

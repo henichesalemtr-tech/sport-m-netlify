@@ -20,8 +20,7 @@
  *    (لا يوجد route له تحت src/app/api/v1) — انظر docs/PROGRESS.md.
  *
  * التشغيل: npm run seed   (أي: tsx scripts/seed.ts)
- * لم يُشغَّل هذا السكربت في بيئة التوثيق (لا يتوفر node/npm/postgres هنا) —
- * انظر docs/TESTING.md و docs/PROGRESS.md.
+ * شُغِّل فعليًا على MariaDB/MySQL محلية (2026-10) — انظر docs/TESTING.md و docs/PROGRESS.md.
  */
 import './load-env';
 import { prisma } from '@/shared/db/client';
@@ -108,13 +107,13 @@ async function seedPermissions(): Promise<Map<string, string>> {
   const codes = Array.from(new Set([...allPermissionCodes(), ...EXTRA_ROUTE_CODES]));
   const codeToId = new Map<string, string>();
   for (const code of codes) {
-    const module = code.split('.')[0] ?? code;
+    const moduleName = code.split('.')[0] ?? code;
     const description =
-      module in PERMISSIONS ? `صلاحية ${code} (وحدة ${module})` : `صلاحية ${code} (مرجعية من المسارات)`;
+      moduleName in PERMISSIONS ? `صلاحية ${code} (وحدة ${moduleName})` : `صلاحية ${code} (مرجعية من المسارات)`;
     const row = await prisma.permission.upsert({
       where: { code },
-      update: { module, description },
-      create: { code, module, description, isSystem: true },
+      update: { module: moduleName, description },
+      create: { code, module: moduleName, description, isSystem: true },
     });
     codeToId.set(code, row.id);
   }
@@ -234,7 +233,7 @@ async function main(): Promise<void> {
   await seedReferenceData();
   await seedSettings();
   await seedBootstrapAdmin();
-  console.log('[seed] اكتمل. تذكّر تطبيق قيود SQL الخام: psql "$DATABASE_URL" -f prisma/raw-constraints.sql');
+  console.log('[seed] اكتمل. تذكّر تطبيق قيود SQL الخام: mysql "$DATABASE_URL_DB" < prisma/raw-constraints.sql');
 }
 
 main()

@@ -2,7 +2,8 @@ import { Prisma } from '@prisma/client';
 
 /**
  * منطق التكرار والتعارض النقي (قابل للاختبار دون قاعدة بيانات) — 7.7.
- * النطاق الزمني نصف مفتوح [start, end) — مطابق لقيد EXCLUDE في raw-constraints.sql.
+ * النطاق الزمني نصف مفتوح [start, end) — هذا الفحص هو مصدر الحقيقة لكشف التعارض
+// في MySQL/MariaDB (لا يوجد EXCLUDE USING gist).
  */
 
 export const WEEKDAY_INDEX: Record<string, number> = {

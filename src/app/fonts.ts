@@ -1,23 +1,18 @@
 /**
- * خط Cairo (متطلب CONVENTIONS.md — RTL، خط محلي).
+ * خط Cairo المحلي (متطلب RTL — خط مضمّن في المستودع، يعمل دون إنترنت).
  *
- * ⚠️ ملفات الخط غير مرفقة في المستودع. لتشغيل الخط المحلي:
- *   1) نزّل عائلة Cairo بصيغة woff2 من Google Fonts (الأوزان 400/500/600/700).
- *   2) ضع الملفات في `public/fonts/`:
- *        Cairo-Regular.woff2, Cairo-Medium.woff2, Cairo-SemiBold.woff2, Cairo-Bold.woff2
- *   3) قواعد @font-face في `src/app/globals.css` ستلتقطها تلقائيًا (font-display: swap)،
- *      ومع غياب الملفات يتم التراجع بأمان إلى خطوط النظام عبر سلسلة CSS:
- *        --font-cairo: 'Cairo', 'Segoe UI', system-ui, sans-serif
+ * الملفات في `public/fonts/` (متغيّرة الأوزان 400-700، مقسّمة حسب unicode-range):
+ *   Cairo-arabic.woff2, Cairo-latin-ext.woff2, Cairo-latin.woff2
  *
- * بديل أقوى عند توفر الملفات: استبدل هذا الملف باستخدام next/font/local:
- *   import localFont from 'next/font/local';
- *   export const cairo = localFont({ src: [...], variable: '--font-cairo' });
- * ثم أضف `cairo.variable` إلى صنف <html> في layout.tsx.
+ * قواعد @font-face في `src/app/globals.css` تلتقطها مباشرة (font-display: swap)،
+ * وسلسلة التراجع في `--font-cairo` تحمي العرض إن حُذف ملف بالخطأ.
+ *
+ * مصدر الملفات: Google Fonts (Cairo v31) — متاحة تحت SIL Open Font License 1.1.
  */
 export interface FontConfig {
   /** متغير CSS الذي تستهلكه tailwind.config.ts (fontFamily.sans). */
   variable: string;
-  /** صنف يُضاف إلى <html> — فارغ عند استخدام @font-face عبر globals.css. */
+  /** صنف يُضاف إلى <html> — فارغ لأن التحميل يتم عبر @font-face في globals.css. */
   className: string;
 }
 

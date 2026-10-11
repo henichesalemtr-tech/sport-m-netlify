@@ -19,8 +19,11 @@ dist/
 *.pem
 
 # storage (ملفات المستخدمين والنسخ الاحتياطية — خارج Git)
-storage/
-!storage/.gitkeep
+# ملاحظة: النمط كان "storage/" بلا شرطة جذر، فكان يتطابق أيضًا مع
+# src/shared/storage/ أي مع الكود المصدري لطبقة التخزين — لذلك لم يُلتقط
+# هذا الملف في Git قط. الجذر المُثبَّت يتجاهل مجلد البيانات فقط.
+/storage/
+!/storage/.gitkeep
 
 # database
 *.db

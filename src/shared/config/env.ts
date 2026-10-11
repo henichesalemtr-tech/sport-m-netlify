@@ -1,12 +1,10 @@
 import { z } from 'zod';
 
-const hex64 = z.string().regex(/^[a-f0-9]{64}$/i, 'APP_SECRET must be 64 hex chars');
-
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
-  APP_SECRET: hex64,
-  SESSION_SECRET: hex64,
+  APP_SECRET: z.string().min(32),
+  SESSION_SECRET: z.string().min(32),
   SESSION_IDLE_MINUTES: z.coerce.number().int().positive().default(60),
   SESSION_ABSOLUTE_HOURS: z.coerce.number().int().positive().default(24),
   APP_TIMEZONE: z.string().default('Africa/Algiers'),
@@ -26,6 +24,9 @@ const envSchema = z.object({
   LOGIN_LOCKOUT_MINUTES: z.coerce.number().int().positive().default(15),
   SCAN_DEDUP_SECONDS: z.coerce.number().int().positive().default(10),
   BACKUP_DIR: z.string().default('./storage/backups'),
+  /** مسار أدوات MySQL/MariaDB عند عدم وجودها في PATH (XAMPP: C:\xampp\mysql\bin). */
+  MYSQLDUMP_BIN: z.string().default('mysqldump'),
+  MYSQL_BIN: z.string().default('mysql'),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
   APP_URL: z.string().url().default('http://localhost:3000'),
   /**

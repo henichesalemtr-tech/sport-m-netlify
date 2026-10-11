@@ -54,8 +54,8 @@ export const sessionRepository = {
     if (query.q) {
       and.push({
         OR: [
-          { title: { contains: query.q, mode: 'insensitive' } },
-          { title: { contains: escapeLike(normalizeArabic(query.q)), mode: 'insensitive' } },
+          { title: { contains: query.q } },
+          { title: { contains: escapeLike(normalizeArabic(query.q)) } },
         ],
       });
     }

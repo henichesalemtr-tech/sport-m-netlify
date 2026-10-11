@@ -1,7 +1,7 @@
 /**
- * CLI لإنشاء نسخة احتياطية عبر pg_dump — غلاف حول backupService
+ * CLI لإنشاء نسخة احتياطية عبر mysqldump — غلاف حول backupService
  * (نفس المسار المستخدم من الواجهة/المهام المجدولة):
- *   pg_dump -Fc → ملف في BACKUP_DIR → سجل BackupRecord (+checksum SHA-256)
+ *   mysqldump → ملف .sql في BACKUP_DIR → سجل BackupRecord (+checksum SHA-256)
  *   → Audit → تطبيق سياسة الاحتفاظ GFS.
  *
  * الاستخدام:
@@ -9,8 +9,10 @@
  *   npm run backup -- --kind=daily     # daily | weekly | monthly | manual
  *   npm run backup -- --kind=auto      # يُشتق النوع من تاريخ اليوم (GFS — نفس منطق المهمة المجدولة)
  *
- * المتطلبات: pg_dump مثبت وفي PATH (PostgreSQL client tools).
- * لم يُشغَّل هذا السكربت في بيئة التوثيق (لا يتوفر node/npm/docker/postgres هنا).
+ * المتطلبات: mysqldump مثبت وفي PATH (أدوات عميل MySQL/MariaDB).
+ * شُغِّل فعليًا على MariaDB 10.11 (أكتوبر 2026): نسخ يدوي عبر mysqldump ينتج ملف SQL
+ * حقيقيًا مع SHA-256 وسجل في backup_records وتطبيق سياسة الاحتفاظ (GFS).
+ * يتطلب mysqldump في PATH أو MYSQLDUMP_BIN في .env (يأتي مع XAMPP في C:\xampp\mysql\bin).
  */
 import './load-env';
 
@@ -31,8 +33,8 @@ async function main(): Promise<void> {
           })();
 
   const tools = await backupService.checkToolsAvailable();
-  if (!tools.pgDump) {
-    throw new Error('pg_dump غير متوفر — ثبّت PostgreSQL client tools وأضفها إلى PATH.');
+  if (!tools.mysqldump) {
+    throw new Error('mysqldump غير متوفر — ثبّت أدوات MySQL/MariaDB (تأتي مع XAMPP في C:\\xampp\\mysql\\bin) وأضفها إلى PATH.');
   }
 
   console.log(`[backup] إنشاء نسخة (${kind})...`);

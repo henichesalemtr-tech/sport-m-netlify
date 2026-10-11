@@ -5,8 +5,8 @@
 #
 # ملاحظات:
 # - node:20-slim (Debian) وليس Alpine: وحدات أصلية (argon2) + Prisma engines.
-# - postgresql-client مُثبَّت في الصورة النهائية لأن خدمة النسخ الاحتياطي
-#   تستدعي pg_dump/pg_restore عبر child_process.
+# - default-mysql-client مُثبَّت في الصورة النهائية لأن خدمة النسخ الاحتياطي
+#   تستدعي mysqldump/mysql عبر child_process.
 # - لا نستخدم output:'standalone' لأنه غير مفعّل في next.config.js الحالي —
 #   ننسخ node_modules كاملة (تشمل tsx لتشغيل scripts/worker|seed|backup).
 # - هذه الصورة لم تُبنَ/تُختبر في بيئة التوثيق (لا docker هنا) — NOT VERIFIED.
@@ -38,9 +38,9 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 
-# أدوات PostgreSQL لعمليات النسخ/الاستعادة + openssl لـ Prisma
+# أدوات MySQL/MariaDB لعمليات النسخ/الاستعادة + openssl لـ Prisma
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends postgresql-client openssl ca-certificates tini \
+  && apt-get install -y --no-install-recommends default-mysql-client openssl ca-certificates tini \
   && rm -rf /var/lib/apt/lists/*
 
 # مستخدم غير جذري

@@ -36,7 +36,7 @@ function buildTemplateWhere(query: EvaluationTemplateListQuery): Prisma.Evaluati
   if (query.sportId) where.sportId = query.sportId;
   if (query.isActive === 'true') where.isActive = true;
   if (query.isActive === 'false') where.isActive = false;
-  if (query.q) where.name = { contains: query.q, mode: 'insensitive' };
+  if (query.q) where.name = { contains: query.q };
   return where;
 }
 
@@ -89,7 +89,7 @@ export const evaluationRepository = {
     return client.evaluationTemplate.findFirst({
       where: {
         deletedAt: null,
-        name: { equals: name, mode: 'insensitive' },
+        name: { equals: name },
         sportId: sportId ?? null,
         ...(excludeId ? { id: { not: excludeId } } : {}),
       },

@@ -1,7 +1,7 @@
-# هجرات Prisma — كيف تُولِّدها ولماذا لا توجد هجرة مكتوبة يدويًا هنا
+# هجرات Prisma (MySQL/MariaDB) — كيف تُولِّدها ولماذا لا توجد هجرة مكتوبة يدويًا هنا
 
-> **لم يُتحقق منه / NOT VERIFIED:** بيئة التوثيق لا تحتوي node/npm/docker/PostgreSQL،
-> لذا لم يُنفَّذ `prisma migrate dev` ولم تُولَّد أي هجرة هنا.
+> **الحالة:** المخطط طُبِّق محليًا على MariaDB 10.11 عبر `npx prisma db push`،
+> ولم تُولَّد هجرة مكتوبة بعد (المشروع يستخدم db push محليًا).
 
 ## لماذا هذا المجلد فارغ (عمدًا)؟
 
@@ -12,16 +12,14 @@
 ## خطوات التهيئة (بيئة حقيقية)
 
 ```bash
-# 1) تأكد من وجود DATABASE_URL في .env (انسخ من .env.example)
-# 2) ولّد الهجرة الأولية
+# 1) شغّل MySQL/MariaDB (في XAMPP: زر Start لخدمة MySQL)
+# 2) أنشئ القاعدة
+mysql -u root -e "CREATE DATABASE IF NOT EXISTS sports_management CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+# 3) DATABASE_URL في .env (انسخ من .env.example) ثم ولّد الهجرة الأولية:
 npx prisma migrate dev --name init
 
-# 3) طبّق قيود SQL الخام (EXCLUDE gist، الفهارس الجزئية، pg_trgm، btree_gist)
-psql "$DATABASE_URL" -f prisma/raw-constraints.sql
-
-# 4) (اختياري لكن موصى به للإنتاج) اسحب صلاحيات UPDATE/DELETE على audit_logs
-#    من دور التطبيق — عدّل الاسم sms_app ليطابق دور قاعدة بياناتك:
-psql "$DATABASE_URL" -c "REVOKE UPDATE, DELETE ON audit_logs FROM sms_app;"
+# 4) طبّق قيود SQL الخام (CHECK + جدول app_locks)
+mysql -u root sports_management < prisma/raw-constraints.sql
 
 # 5) البذر المرجعي
 npm run seed
@@ -32,20 +30,22 @@ npm run seed
 بعد توليد `0001_init`، يمكنك لصق محتوى `prisma/raw-constraints.sql` في نهاية
 `0001_init/migration.sql` **قبل** تطبيقها (`prisma migrate dev` مرة أخرى أو
 `migrate deploy` على قاعدة نظيفة) حتى تُطبَّق القيود تلقائيًا في كل بيئة.
-إذا فعلت ذلك، أبقِ الملف الخام مرجعًا موثقًا واحذف خطوة psql اليدوية من runbook الخاص بك.
+إذا فعلت ذلك، أبقِ الملف الخام مرجعًا موثقًا واحذف خطوة mysql اليدوية من runbook الخاص بك.
 
 ## الإنتاج
 
 ```bash
 npx prisma migrate deploy          # يطبق الهجرات المولدة فقط (بلا drift)
-psql "$DATABASE_URL" -f prisma/raw-constraints.sql   # إن لم تُدمج في الهجرة
+mysql -u root sports_management < prisma/raw-constraints.sql   # إن لم تُدمج في الهجرة
 npm run seed                        # Idempotent — آمن لإعادة التشغيل
 ```
 
 ## ملاحظات
 
-- قيود `EXCLUDE USING gist` تتطلب إضافة `btree_gist` (ينشئها ملف SQL الخام).
-- دور قاعدة البيانات الذي ينفّذ `REVOKE` يجب أن يكون مختلفًا عن دور التطبيق
-  (وإلا سحب التطبيق الصلاحيات عن نفسه). انظر `docs/SECURITY.md` و`docs/DEPLOYMENT.md`.
-- SQLite غير مدعوم من هذه القيود — التطوير عليه (إن اضطررت) يعني غياب ضمانات
-  تعارض الحصص والفهارس الجزئية. انظر `docs/ASSUMPTIONS.md` و`docs/DECISIONS.md`.
+- MySQL لا يعرف `EXCLUDE USING gist` ولا الفهارس الجزئية: كشف تعارض الحصص
+  والتفرّد مع الحذف الناعم يطبّقهما الكود (`src/modules/sessions/recurrence.ts`
+  وفحوصات الخدمات) مع أقفال `SELECT ... FOR UPDATE`.
+- سجل التدقيق Append-Only: لا REVOKE في الإعداد المحلي؛ الحماية الحالية هي غياب
+  مسارات UPDATE/DELETE للسجل في `src/modules/audit-logs`. انظر `docs/SECURITY.md`.
+- الأقفال التسلسلية: جدول `app_locks` + `lockNamed()` في `src/shared/db/client.ts`.
+  انظر ADR-12 وADR-13 في `docs/DECISIONS.md`.

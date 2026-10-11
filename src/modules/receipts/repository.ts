@@ -1,5 +1,5 @@
 import type { Prisma, Receipt } from '@prisma/client';
-import { prisma, type PrismaTransaction } from '@/shared/db/client';
+import { lockNamed, prisma, type PrismaTransaction } from '@/shared/db/client';
 
 export const receiptInclude = {
   payment: {
@@ -28,7 +28,7 @@ export const receiptRepository = {
 
   /** قفل تسلسلي لكل سنة مالية يمنع توليد رقمين متطابقين/فجوات عند التزامن. */
   async lockFiscalYear(fiscalYear: number, tx: PrismaTransaction): Promise<void> {
-    await tx.$queryRaw`SELECT 1 FROM pg_advisory_xact_lock(7001, ${fiscalYear}::int)`;
+    await lockNamed(tx, `receipts:${fiscalYear}`);
   },
 
   /** كل أرقام التسلسل الصادرة لسنة مالية (بترتيب تصاعدي) — داخل المعاملة بعد القفل. */

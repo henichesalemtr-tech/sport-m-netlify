@@ -24,7 +24,7 @@ function buildTypeWhere(query: DocumentTypeListQuery): Prisma.DocumentTypeWhereI
   const where: Prisma.DocumentTypeWhereInput = {};
   if (query.isActive === 'true') where.isActive = true;
   if (query.isActive === 'false') where.isActive = false;
-  if (query.q) where.name = { contains: query.q, mode: 'insensitive' };
+  if (query.q) where.name = { contains: query.q };
   return where;
 }
 
@@ -70,7 +70,7 @@ export const documentRepository = {
     const client: Db = tx ?? prisma;
     return client.documentType.findFirst({
       where: {
-        name: { equals: name, mode: 'insensitive' },
+        name: { equals: name },
         ...(excludeId ? { id: { not: excludeId } } : {}),
       },
     });

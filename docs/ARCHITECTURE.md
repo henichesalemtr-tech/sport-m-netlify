@@ -1,12 +1,17 @@
 # البنية المعمارية (ARCHITECTURE)
 
-> **NOT VERIFIED / لم يُتحقق منه:** وُثّقت البنية من قراءة الكود في بيئة بلا
-> node/npm/docker/PostgreSQL — لم يُبنَ أو يُشغَّل النظام هنا.
+> **حالة التحقق:** وُثّقت البنية من قراءة الكود، ثم شُغّل النظام محليًا على
+> **MariaDB 10.11** (أكتوبر 2026): `npx prisma db push` + `prisma/raw-constraints.sql`،
+> `npm run seed`/`seed:demo`، دخول ولوحة عبر `localhost:3000`، `npm run typecheck` نظيف،
+> `npm run lint -- --max-warnings=0` نظيف، `npm run test` (180 اختبار وحدة)،
+> `npx playwright test` (66/66 عبر 6 مقاسات)، `npm run build` إنتاجي ناجح،
+> و`npm run backup` / `npm run restore` / `npm run worker -- --once` شُغِّلت فعليًا.
+> **غير مُتحقَّق منه (NOT VERIFIED):** Docker، وقياسات الأداء (P95/`EXPLAIN`).
 
 ## 1) النمط العام: Modular Monolith على Next.js 14
 
 تطبيق واحد (Next.js App Router) مقسّم داخليًا إلى وحدات مستقلة بمنطق أعمال واضح،
-مع قاعدة بيانات PostgreSQL واحدة. لا microservices: حجم الفريق/النادي لا يبررها،
+مع قاعدة بيانات MySQL/MariaDB واحدة (كانت PostgreSQL قبل ADR-13). لا microservices: حجم الفريق/النادي لا يبررها،
 والذرّية المالية (Transactions) أسهل كثيرًا في عملية واحدة.
 انظر `docs/DECISIONS.md` (ADR-1).
 
@@ -24,7 +29,7 @@
  Repository Layer — src/modules/<m>/repository.ts
    │  استعلامات Prisma فقط + نطاق البيانات (Scoping: soft-delete، own-data)
    ▼
- PostgreSQL (Prisma) + قيود SQL خام (EXCLUDE، فهارس جزئية، REVOKE)
+ MySQL/MariaDB (Prisma) + قيود SQL خام (CHECK) وأقفال صفوف (SELECT ... FOR UPDATE)
 ```
 
 **قاعدة صارمة (docs/CONVENTIONS.md):** route لا يحتوي منطق أعمال، service لا يحتوي
@@ -35,7 +40,7 @@ SQL خامًا غير ضروري، repository لا يحتوي قواعد عمل.
 ```
 prisma/
   schema.prisma          # 30+ نموذج — مصدر حقيقة المخطط
-  raw-constraints.sql    # EXCLUDE gist، فهارس جزئية، pg_trgm/btree_gist، REVOKE
+  raw-constraints.sql    # قيود CHECK المالية/المنطقية + جدول app_locks (بديل الأقفال الاستشارية)
   migrations/README.md   # الهجرة يولّدها المستخدم (prisma migrate dev)
 scripts/                 # seed / seed-demo / seed-load / backup / restore / worker
 docker/                  # Dockerfile + nginx.conf
@@ -66,13 +71,13 @@ src/
 | القرار | السبب الجوهري |
 |--------|---------------|
 | Next.js 14 modular monolith | نشر بسيط على خادم نادي محلي، SSR، API+UI في مستودع واحد |
-| Prisma + PostgreSQL | إنتاجية + أمان استعلامات؛ PostgreSQL إلزامي لـ EXCLUDE gist والفهارس الجزئية |
+| Prisma + MySQL/MariaDB | إنتاجية + أمان استعلامات؛ القاعدة محلية (XAMPP) وقيود التعارض والتفرّد تُطبَّق في طبقة التطبيق |
 | BigInt بأصغر وحدة للمال | لا أخطاء float مالية إطلاقًا (ADR-3) |
 | Argon2id + جلسات في DB | تجزئة قوية + إبطال فوري للجلسات وقابلية تدقيق (ADR-4) |
 | تفويض بصلاحيات دقيقة (3 طبقات) | ممنوع `role === 'ADMIN'`؛ requirePermission + مصفوفة قابلة للتخصيص + نطاق بيانات في الـ repository |
 | next-intl + خط Cairo محلي | عربية RTL أولًا بلا اعتماد على شبكة خارجية (ADR-5) |
 | worker/cron داخل العملية | لا Redis/BullMQ — JobRun.lockKey يمنع التشغيل المزدوج (ADR-10) |
-| SQL خام للقيود الخاصة | Prisma لا يعبر عن EXCLUDE/الفهارس الجزئية/REVOKE (ADR-11) |
+| SQL خام للقيود الخاصة | Prisma لا يعبر عن قيود CHECK ولا جدول الأقفال `app_locks` (ADR-11 — نسخة MySQL؛ لم يعد الملف يتضمن EXCLUDE/فهارس جزئية/pg_trgm/REVOKE) |
 | ذرّية كاملة للعمليات المالية | payment = دفعة + إعادة اشتقاق paidAmount + قيد خزينة + وصل + Audit في `$transaction` واحد |
 
 ## 4) تدفق الطلب (Request Lifecycle)
@@ -94,11 +99,14 @@ src/
 ## 5) التزامن والسلامة
 
 - **Optimistic locking**: حقل `version` في كل كيان رئيسي؛ عدم تطابق → `VERSION_CONFLICT` (409).
-- **Pessimistic locking**: قفل صف الاشتراك عند الدفع، قفل صف المجموعة عند إضافة عضو،
-  قفل استشاري (advisory) لتسلسل أرقام الحركات/الوصولات لكل سنة مالية.
+- **Pessimistic locking**: قفل صف الاشتراك عند الدفع، قفل صف المجموعة عند إضافة عضو
+  (`SELECT ... FOR UPDATE`)، وقفل مسمّى لكل سنة مالية عبر جدول `app_locks`
+  (`lockNamed()` في `src/shared/db/client.ts`) لتسلسل أرقام الحركات/الوصولات
+  — بدل `pg_advisory_xact_lock` في نسخة PostgreSQL.
 - **Idempotency**: `Idempotency-Key` + قيد فريد في payments/attendance؛
   عند P2002 تُعاد النتيجة السابقة بدل تنفيذ مزدوج.
-- **Soft delete**: `deletedAt` + فهارس فريدة جزئية `WHERE deleted_at IS NULL`.
+- **Soft delete**: `deletedAt` + فهارس فريدة **عادية**؛ التفرّد الواعي بالحذف الناعم
+  (`WHERE deleted_at IS NULL`) لا يوجد كفهرس جزئي في MySQL فيُفحص في طبقة الخدمة.
 
 ## 6) المهام المجدولة (src/jobs)
 

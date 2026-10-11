@@ -19,7 +19,7 @@
  *    وLOAD_ATTENDANCE سجل حضور = رياضي × حصة ضمن مجموعته.
  *
  * التشغيل: npm run seed:load
- * لم يُشغَّل هذا السكربت في بيئة التوثيق (لا يتوفر node/npm/postgres هنا).
+ * لم يُشغَّل هذا السكربت بعد (يحتاج قاعدة بيانات محلية بأحجام كبيرة).
  */
 import './load-env';
 
@@ -285,7 +285,7 @@ async function main(): Promise<void> {
 
   console.log(
     `[seed-load] اكتمل في ${((Date.now() - t0) / 1000).toFixed(1)}s — ` +
-      'شغّل ANALYZE لتحديث إحصاءات المخطط: psql "$DATABASE_URL" -c "ANALYZE;"',
+      "شغّل ANALYZE لتحديث إحصاءات المخطط: mysql -u root sports_management -e \"ANALYZE TABLE athletes, payments, attendance_records;\"",
   );
   void timeStr;
 }

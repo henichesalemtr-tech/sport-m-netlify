@@ -66,11 +66,11 @@ function buildWhere(query: AthleteListQuery): Prisma.AthleteWhereInput {
     const q = escapeLike(normalizeArabic(query.q));
     // بحث متسامح: مطابق خام + مطابق بعد التطبيع العربي (ألف/ياء/تاء مربوطة/تشكيل)
     where.OR = [
-      { registrationNo: { contains: query.q, mode: 'insensitive' } },
-      { firstName: { contains: q, mode: 'insensitive' } },
-      { lastName: { contains: q, mode: 'insensitive' } },
-      { email: { contains: query.q, mode: 'insensitive' } },
-      { phone: { contains: query.q, mode: 'insensitive' } },
+      { registrationNo: { contains: query.q } },
+      { firstName: { contains: q } },
+      { lastName: { contains: q } },
+      { email: { contains: query.q } },
+      { phone: { contains: query.q } },
     ];
   }
   return where;
@@ -170,8 +170,8 @@ export const athleteRepository = {
     return db.athlete.findMany({
       where: {
         deletedAt: null,
-        firstName: { contains: first, mode: 'insensitive' },
-        lastName: { contains: last, mode: 'insensitive' },
+        firstName: { contains: first },
+        lastName: { contains: last },
         ...(excludeId ? { id: { not: excludeId } } : {}),
       },
       select: CANDIDATE_SELECT,

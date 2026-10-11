@@ -42,11 +42,11 @@ function buildWhere(query: ParentListQuery): Prisma.ParentWhereInput {
   if (query.q) {
     const q = escapeLike(normalizeArabic(query.q));
     where.OR = [
-      { firstName: { contains: q, mode: 'insensitive' } },
-      { lastName: { contains: q, mode: 'insensitive' } },
-      { phone: { contains: query.q, mode: 'insensitive' } },
-      { phone2: { contains: query.q, mode: 'insensitive' } },
-      { email: { contains: query.q, mode: 'insensitive' } },
+      { firstName: { contains: q } },
+      { lastName: { contains: q } },
+      { phone: { contains: query.q } },
+      { phone2: { contains: query.q } },
+      { email: { contains: query.q } },
     ];
   }
   return where;

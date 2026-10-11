@@ -1,17 +1,20 @@
 /**
  * خدمة النسخ الاحتياطي (Super Admin — backup.manage):
- * - إنشاء نسخة عبر pg_dump (child_process) — تفشل برسالة واضحة إن لم تتوفر الأداة.
+ * - إنشاء نسخة عبر mysqldump (child_process) — تفشل برسالة واضحة إن لم تتوفر الأداة.
  * - قائمة/تنزيل/استعادة (وضع صيانة + تأكيد مكتوب RESTORE + نسخة تلقائية قبل الاستعادة + Audit).
  * - سياسة احتفاظ GFS: يومي 7 / أسبوعي 4 / شهري 6 (retention.ts نقية).
  *
- * متطلبات التشغيل: PostgreSQL client tools (pg_dump/pg_restore) مثبتة وفي PATH.
- * عند غيابها ترمي الخدمة BUSINESS_RULE برسالة عربية واضحة ولا تنهار العملية.
+ * متطلبات التشغيل: MySQL/MariaDB client tools (mysqldump/mysql) مثبتة وفي PATH
+ * (تأتي مع XAMPP في C:\xampp\mysql\bin). عند غيابها ترمي الخدمة BUSINESS_RULE
+ * برسالة عربية واضحة ولا تنهار العملية.
  */
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import type { BackupRecord } from '@prisma/client';
+import { createReadStream } from 'node:fs';
+import type { BackupRecord, Prisma } from '@prisma/client';
 import { prisma } from '@/shared/db/client';
 import { getEnv } from '@/shared/config/env';
+import { getMysqlConnection, mysqlConnectionArgs } from '@/shared/db/mysql-connection';
 import { writeAudit } from '@/shared/audit';
 import { AppError, ErrorCode, notFound } from '@/shared/errors';
 import { settingsService } from '@/modules/settings/service';
@@ -30,11 +33,15 @@ export interface BackupFileDto {
 }
 
 /** تنفيذ أمر خارجي مع فشل رقيق عند غياب الأداة (ENOENT). */
-function runCommand(command: string, args: string[]): Promise<void> {
+function runCommand(
+  command: string,
+  args: string[],
+  options?: { stdinFile?: string; env?: Record<string, string> },
+): Promise<void> {
   return new Promise((resolve, reject) => {
     let child: ReturnType<typeof spawn>;
     try {
-      child = spawn(command, args, { env: process.env });
+      child = spawn(command, args, { env: { ...process.env, ...options?.env } });
     } catch (e) {
       reject(new AppError(ErrorCode.BUSINESS_RULE, `تعذر تشغيل ${command}: ${e instanceof Error ? e.message : String(e)}`));
       return;
@@ -48,7 +55,7 @@ function runCommand(command: string, args: string[]): Promise<void> {
         reject(
           new AppError(
             ErrorCode.BUSINESS_RULE,
-            `أداة ${command} غير متوفرة على الخادم — ثبّت PostgreSQL client tools وأضفها إلى PATH`,
+            `أداة ${command} غير متوفرة على الخادم — ثبّت أدوات MySQL/MariaDB (تأتي مع XAMPP في C:\\xampp\\mysql\\bin) وأضفها إلى PATH، أو عيّن مسارها في .env عبر MYSQLDUMP_BIN / MYSQL_BIN`,
           ),
         );
       } else {
@@ -66,7 +73,26 @@ function runCommand(command: string, args: string[]): Promise<void> {
         );
       }
     });
+    if (options?.stdinFile) {
+      const stream = createReadStream(options.stdinFile);
+      stream.on('error', (err) => {
+        child.stdin?.destroy();
+        reject(new AppError(ErrorCode.INTERNAL, `تعذر قراءة ملف النسخة: ${err.message}`));
+      });
+      stream.pipe(child.stdin!);
+    }
   });
+}
+
+/** وسائط الاتصال + تمرير كلمة المرور عبر MYSQL_PWD (لا تظهر في سطر العمليات). */
+function mysqlArgs(extra: string[]): string[] {
+  const conn = getMysqlConnection();
+  return [...mysqlConnectionArgs(conn), ...extra];
+}
+
+function mysqlPasswordEnv(): Record<string, string> {
+  const conn = getMysqlConnection();
+  return conn.password ? { MYSQL_PWD: conn.password } : {};
 }
 
 async function sha256File(filePath: string): Promise<string> {
@@ -88,8 +114,21 @@ function backupPath(dir: string, fileName: string): string {
   return `${dir}/${fileName.replace(/^.*[/\\]/, '').replace(/[^\w.\-]/g, '_')}`;
 }
 
-function systemMeta(meta: Meta | null): { user: null | Meta['user']; requestId: string; ip?: string; userAgent?: string } {
+/** سجل نسخة بصيغة الإدراج المباشر — لإعادة بناء صفّه بعد الاستعادة. */
+function recordSnapshot(b: BackupRecord, createdBy: string | null): Prisma.BackupRecordUncheckedCreateInput {
   return {
+    id: b.id,
+    fileName: b.fileName,
+    storageKey: b.storageKey,
+    sizeBytes: b.sizeBytes,
+    kind: b.kind,
+    checksum: b.checksum,
+    createdAt: b.createdAt,
+    createdBy,
+  };
+}
+
+function systemMeta(meta: Meta | null): { user: null | Meta['user']; requestId: string; ip?: string; userAgent?: string } {  return {
     user: meta?.user ?? null,
     requestId: meta?.requestId ?? 'system',
     ip: meta?.ip,
@@ -100,15 +139,24 @@ function systemMeta(meta: Meta | null): { user: null | Meta['user']; requestId: 
 export const backupService = {
   /** إنشاء نسخة احتياطية (يدوية أو مجدولة) + تطبيق سياسة الاحتفاظ. */
   async create(meta: Meta | null, input: CreateBackupInput = {}): Promise<BackupRecord> {
-    const env = getEnv();
     const kind = input.kind ?? 'manual';
     const dir = await ensureBackupDir();
     const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-    const fileName = `backup-${kind}-${stamp}.dump`;
+    const fileName = `backup-${kind}-${stamp}.sql`;
     const filePath = backupPath(dir, fileName);
 
-    // pg_dump بصيغة custom (-Fc) — تدعم الاستعادة الانتقائية والضغط
-    await runCommand('pg_dump', ['--format=custom', '--no-owner', '--no-privileges', `--file=${filePath}`, env.DATABASE_URL]);
+    // SQL نصي (--single-transaction لقراءة متسقة دون قفل الجداول)
+    await runCommand(
+      getEnv().MYSQLDUMP_BIN,
+      mysqlArgs([
+        '--single-transaction',
+        '--routines',
+        '--triggers',
+        '--default-character-set=utf8mb4',
+        `--result-file=${filePath}`,
+      ]),
+      { env: mysqlPasswordEnv() },
+    );
 
     const fs = await import('node:fs/promises');
     const stat = await fs.stat(filePath);
@@ -177,7 +225,7 @@ export const backupService = {
    * استعادة نسخة — أخطر عملية في النظام:
    * 1) نسخة تلقائية قبل الاستعادة (pre-restore) — إن فشلت تُوقف العملية كاملة.
    * 2) تفعيل وضع الصيانة (Setting).
-   * 3) pg_restore --clean --if-exists.
+   * 3) mysql < الملف (mysqldump يتضمن DROP TABLE قبل كل CREATE).
    * 4) Audit + تسجيل restoredAt.
    * عند الفشل يبقى وضع الصيانة مفعّلًا عمدًا (حماية للبيانات) ويُبلَّغ المدير.
    */
@@ -210,22 +258,24 @@ export const backupService = {
     );
 
     try {
-      // 3) الاستعادة
-      await runCommand('pg_restore', [
-        '--clean',
-        '--if-exists',
-        '--no-owner',
-        '-d',
-        getEnv().DATABASE_URL,
-        record.storageKey,
-      ]);
+      // 3) الاستعادة — mysql يقرأ أمر SQL من stdin
+      await runCommand(getEnv().MYSQL_BIN, mysqlArgs([]), {
+        stdinFile: record.storageKey,
+        env: mysqlPasswordEnv(),
+      });
 
-      // 4) Audit + restoredAt
+      // 4) إعادة بناء سجلّات النسخ بعد الاستعادة ثم Audit + restoredAt
+      // الاستيراد استبدل جدول backup_records بنسخته القديمة، فصفّ النسخة
+      // المستعاد منها (وصفّة نسخة الأمان) اختفى مع أن ملفيهما موجودان.
+      const ownerExists = await prisma.user.findUnique({ where: { id: meta.user.userId }, select: { id: true } });
+      const ownerId = ownerExists ? meta.user.userId : null;
       await prisma.$transaction(async (tx) => {
+        if (preRestore) await backupRepository.upsertRecord(recordSnapshot(preRestore, ownerId), tx);
+        await backupRepository.upsertRecord(recordSnapshot(record, ownerId), tx);
         await backupRepository.markRestored(record.id, tx);
         await writeAudit(
           {
-            userId: meta.user.userId,
+            userId: ownerId,
             action: 'RESTORE_BACKUP',
             entityType: ENTITY,
             entityId: record.id,
@@ -247,7 +297,18 @@ export const backupService = {
       );
       return { restoredFrom: record.fileName, preRestoreBackupId: preRestore?.id ?? null };
     } catch (e) {
-      // الفشل: يبقى وضع الصيانة مفعّلًا عمدًا — يتطلب تدخل المدير
+      // الفشل: يبقى وضع الصيانة مفعّلًا عمدًا — يتطلب تدخل المدير.
+      // استيراد الملف يمسح جدول الإعدادات بنسخته القديمة، فالراية تُعاد كتابتها
+      // هنا حتى لا يظن المدير أن النظام يعمل عاديًا فوق قاعدة نصف مستعادة.
+      try {
+        await settingsService.set(
+          MAINTENANCE_KEY,
+          { value: true, valueType: 'boolean', group: 'system' },
+          systemMeta(meta),
+        );
+      } catch {
+        // تعذر ضبط الراية — الخطأ الأصلي هو المهم
+      }
       const message = e instanceof Error ? e.message : String(e);
       await writeAudit({
         userId: meta.user.userId,
@@ -266,23 +327,38 @@ export const backupService = {
     }
   },
 
-  /** حذف النسخ المنتهية حسب سياسة الاحتفاظ (ملف + سجل + Audit). */
+  /** حذف النسخ المنتهية حسب سياسة الاحتفاظ، والسجلات التي فقدت ملفها (ملف + سجل + Audit). */
   async enforceRetention(meta: Meta | null): Promise<number> {
     const all = await backupRepository.listAll();
+    const fs = await import('node:fs/promises');
     const expiredIds = selectExpiredBackups(
       all.map((b) => ({ id: b.id, createdAt: b.createdAt, kind: b.kind })),
     );
-    if (expiredIds.length === 0) return 0;
 
-    const fs = await import('node:fs/promises');
+    // سجل بلا ملف على القرص = رابط تنزيل ميت في الواجهة؛ يظهر غالبًا بعد استعادة
+    // نسخة قديمة (الاستيراد يعيد جدول السجلات كما كان وقت الالتقاط).
+    const missing = new Set<string>();
+    if (getEnv().STORAGE_DRIVER === 'local') {
+      for (const b of all) {
+        try {
+          await fs.access(b.storageKey);
+        } catch {
+          missing.add(b.id);
+        }
+      }
+    }
+
+    const targets = [...new Set([...expiredIds, ...missing])];
+    if (targets.length === 0) return 0;
+
     let deleted = 0;
-    for (const id of expiredIds) {
+    for (const id of targets) {
       const record = all.find((b) => b.id === id);
       if (!record) continue;
       try {
         await fs.unlink(record.storageKey);
       } catch {
-        // الملف غير موجود أصلًا — نحذف السجل anyway
+        // الملف غير موجود أصلًا — يُحذف السجل رغم ذلك
       }
       await prisma.$transaction(async (tx) => {
         await backupRepository.deleteRecord(id, tx);
@@ -296,7 +372,7 @@ export const backupService = {
             ipAddress: meta?.ip,
             userAgent: meta?.userAgent,
             before: { fileName: record.fileName, kind: record.kind },
-            metadata: { operation: 'retention' },
+            metadata: { operation: missing.has(id) ? 'missing_file' : 'retention' },
           },
           tx,
         );
@@ -311,13 +387,16 @@ export const backupService = {
     return scheduledKind(now);
   },
 
-  /** فحص توفر أدوات PostgreSQL (للتشخيص من الواجهة). */
-  async checkToolsAvailable(): Promise<{ pgDump: boolean; pgRestore: boolean }> {
+  /** فحص توفر أدوات MySQL/MariaDB (للتشخيص من الواجهة). */
+  async checkToolsAvailable(): Promise<{ mysqldump: boolean; mysql: boolean }> {
     const check = (cmd: string) =>
       runCommand(cmd, ['--version'])
         .then(() => true)
         .catch(() => false);
-    const [pgDump, pgRestore] = await Promise.all([check('pg_dump'), check('pg_restore')]);
-    return { pgDump, pgRestore };
+    const [mysqldump, mysql] = await Promise.all([
+      check(getEnv().MYSQLDUMP_BIN),
+      check(getEnv().MYSQL_BIN),
+    ]);
+    return { mysqldump, mysql };
   },
 };
