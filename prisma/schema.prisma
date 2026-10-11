@@ -307,7 +307,7 @@ model PasswordResetToken {
 
 // ---------- الإعدادات ----------
 
-// إعدادات键/قيمة قابلة للتعديل من الواجهة (لا قيم صلبة في الكود)
+// إعدادات مفتاح/قيمة قابلة للتعديل من الواجهة (لا قيم صلبة في الكود)
 model Setting {
   id          String   @id @default(uuid()) @db.Char(36)
   key         String   @unique
@@ -480,7 +480,9 @@ model Athlete {
   sport           Sport?        @relation(fields: [sportId], references: [id])
   ageCategoryId   String?       @map("age_category_id") @db.Char(36)
   ageCategory     AgeCategory?  @relation(fields: [ageCategoryId], references: [id])
-  registrationDate DateTime     @default(now()) @map("registration_date") @db.Date
+  // @db.Date لا يقبل now() كافتراضي في MySQL ≥ 8 (Invalid default value)؛
+  // MariaDB يتسامح، لكن صيغة التعبير بين قوسين هي الوحيدة العاملة على المحرّكين.
+  registrationDate DateTime     @default(dbgenerated("(CURRENT_DATE)")) @map("registration_date") @db.Date
   status          AthleteStatus @default(ACTIVE)
   notes           String?       @db.Text
   additionalInfo  String?       @map("additional_info") @db.Text
@@ -578,7 +580,7 @@ model GroupMember {
   group      Group     @relation(fields: [groupId], references: [id], onDelete: Cascade)
   athleteId  String    @map("athlete_id") @db.Char(36)
   athlete    Athlete   @relation(fields: [athleteId], references: [id], onDelete: Cascade)
-  joinedAt   DateTime  @default(now()) @map("joined_at") @db.Date
+  joinedAt   DateTime  @default(dbgenerated("(CURRENT_DATE)")) @map("joined_at") @db.Date
   leftAt     DateTime? @map("left_at") @db.Date
   leaveReason String?  @map("leave_reason") @db.Text
   // السعة تُفرض داخل Transaction بقفل صف المجموعة (SELECT ... FOR UPDATE) — 7.6
